@@ -1,0 +1,8 @@
+{
+  "name": "Remix CRED \u0026 EDI Antropometría 1.0",
+  "description": "Aplicación clínica de Calculadora y Antropometría CRED, Curvas de Crecimiento OMS, Diagnóstico Nutricional y Evaluación del Desarrollo Infantil (EDI).",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

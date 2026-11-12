@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">CRED &amp; EDI</string>
+    <string name="tab_calculadora">Calculadora</string>
+    <string name="tab_curvas">Curvas OMS</string>
+    <string name="tab_diagnostico">Diagnóstico</string>
+    <string name="tab_edi">EDI</string>
+</resources>
