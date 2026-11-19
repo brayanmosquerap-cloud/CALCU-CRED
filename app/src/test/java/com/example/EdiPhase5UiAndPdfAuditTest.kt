@@ -105,10 +105,11 @@ class EdiPhase5UiAndPdfAuditTest {
             CredEdiApp(viewModel = vm)
         }
 
-        // Navegar a Tab 4 (EDI) y verificar defecto inconsistente en UI (hallazgo reportado: A término 32s 0d)
+        // Navegar a Tab 4 (EDI) y verificar corrección MEDIO-01: sin EG registrada no muestra "A término (32s 0d)"
         composeRule.onNodeWithTag("tab_edi").performClick()
         composeRule.onNodeWithTag("edi_view_summary").assertIsDisplayed()
-        composeRule.onNodeWithText("A término (32s 0d)").assertIsDisplayed()
+        composeRule.onNodeWithTag("edi_summary_ga_status_text").assertIsDisplayed()
+        composeRule.onNodeWithText("EG no registrada").assertIsDisplayed()
 
         // Verificar que las 5 tarjetas de resumen existen
         EdiAxis.entries.forEach { axis ->
@@ -180,6 +181,7 @@ class EdiPhase5UiAndPdfAuditTest {
         composeRule.onNodeWithTag("tab_calculadora").performClick()
         vm.updateFechaNacimiento("01/08/2024")
         vm.updateFechaEvaluacion("16/02/2025")
+        vm.confirmEdiTermWithoutWeeks()
         vm.updatePesoInput("7.80")
         vm.updateLongitudInput("67.5")
         vm.updatePerimetroCefalicoInput("43.5")
@@ -246,6 +248,7 @@ class EdiPhase5UiAndPdfAuditTest {
         val vm1 = CredEdiViewModel().apply {
             updateFechaNacimiento("05/01/2025")
             updateFechaEvaluacion("20/02/2025")
+            confirmEdiTermWithoutWeeks()
             updatePesoInput("4.80")
             updateLongitudInput("56.0")
             updatePerimetroCefalicoInput("38.0")
@@ -267,6 +270,7 @@ class EdiPhase5UiAndPdfAuditTest {
         val vm2 = CredEdiViewModel().apply {
             updateFechaNacimiento("10/11/2024")
             updateFechaEvaluacion("25/02/2025")
+            confirmEdiTermWithoutWeeks()
             updatePerimetroCefalicoInput("40.5")
         }
         prepareCleanGroup(vm2, 3)
@@ -290,6 +294,7 @@ class EdiPhase5UiAndPdfAuditTest {
         val vm3 = CredEdiViewModel().apply {
             updateFechaNacimiento("10/12/2023")
             updateFechaEvaluacion("20/02/2025")
+            confirmEdiTermWithoutWeeks()
             updatePerimetroCefalicoInput("46.2")
         }
         prepareCleanGroup(vm3, 8)
@@ -400,6 +405,7 @@ class EdiPhase5UiAndPdfAuditTest {
         val vm8 = CredEdiViewModel().apply {
             updateFechaNacimiento("15/05/2023")
             updateFechaEvaluacion("20/02/2025")
+            confirmEdiTermWithoutWeeks()
             updatePerimetroCefalicoInput("47.8")
         }
         prepareCleanGroup(vm8, 10)
@@ -418,6 +424,7 @@ class EdiPhase5UiAndPdfAuditTest {
         val vm9 = CredEdiViewModel().apply {
             updateFechaNacimiento("05/01/2025")
             updateFechaEvaluacion("20/02/2025")
+            confirmEdiTermWithoutWeeks()
             updatePesoInput("4.80")
             updateLongitudInput("56.0")
             updatePerimetroCefalicoInput("38.0")

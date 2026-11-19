@@ -64,8 +64,18 @@ data class IndicatorEvaluation(
     val previousY: Float,
     val curves: List<ZCurveData>,
     val edadAMD: String = "0a 0m 0d",
-    val grupoEtarioTitle: String = ""
+    val grupoEtarioTitle: String = "",
+    val isReferenceAvailable: Boolean = true,
+    val unavailabilityTitle: String = "",
+    val unavailabilityReason: String = "",
+    val implementedRangeLabel: String = ""
 )
+
+enum class GlobalDiagnosisCompleteness {
+    COMPLETE,
+    PARTIAL,
+    UNAVAILABLE
+}
 
 data class GlobalDiagnosticSummary(
     val title: String,
@@ -84,12 +94,21 @@ data class GlobalDiagnosticSummary(
     val minimoGramosDiaEsperado: Int,
     val catchUpBadgeText: String,
     val gananciaStatusTitle: String,
-    val gananciaSeverity: ClassificationSeverity
-)
+    val gananciaSeverity: ClassificationSeverity,
+    val isAvailable: Boolean = true,
+    val pcAvailable: Boolean = true,
+    val unavailabilityReason: String = "",
+    val availableIndicatorsCount: Int = 5,
+    val outOfRangeIndicators: List<String> = emptyList(),
+    val completeness: GlobalDiagnosisCompleteness = GlobalDiagnosisCompleteness.COMPLETE
+) {
+    val isPartial: Boolean
+        get() = completeness == GlobalDiagnosisCompleteness.PARTIAL
+}
 
 object WhoGrowthStandards {
 
-    private data class RefPoint(
+    internal data class RefPoint(
         val x: Float,
         val m3Neg: Float,
         val m2Neg: Float,
@@ -261,8 +280,10 @@ object WhoGrowthStandards {
      * Piecewise Z-score interpolation across (-3, -2, -1, 0, +1, +2, +3) SD reference curves,
      * ensuring 100% mathematical alignment with the WHO cutoff ranges displayed in the UI.
      */
-    private fun computeZScore(value: Double, ref: RefPoint): Double {
+    internal fun computeZScore(value: Double, ref: RefPoint): Double {
+        if (!value.isFinite()) return Double.NaN
         val v = value.toFloat()
+        if (!v.isFinite()) return Double.NaN
         val knots = listOf(
             -3.0 to ref.m3Neg,
             -2.0 to ref.m2Neg,
@@ -288,7 +309,7 @@ object WhoGrowthStandards {
                 return z0 + ((v - val0) / span) * (z1 - z0)
             }
         }
-        return 0.0
+        return Double.NaN
     }
 
     private fun bandForZ(z: Double): CutoffBand = when {
@@ -332,6 +353,126 @@ object WhoGrowthStandards {
     private fun fmt(v: Double, decimals: Int): String =
         String.format(Locale.US, "%.${decimals}f", v)
 
+    private fun formatPatientEdadAmd(
+        edadMeses: Int,
+        edadDias: Int,
+        hasVerifiableAge: Boolean
+    ): String {
+        if (!hasVerifiableAge) return "Edad no verificable"
+        if (edadMeses < 0 || edadDias < 0) return "Edad fuera de rango (${edadMeses}m ${edadDias}d)"
+        val normalizedExtraMonths = edadDias / 30
+        val remDias = edadDias % 30
+        val totalMeses = edadMeses + normalizedExtraMonths
+        return "${totalMeses / 12}a ${totalMeses % 12}m ${remDias}d"
+    }
+
+    private fun isWithinOms0To60mInclusive(
+        edadMeses: Int,
+        edadDias: Int,
+        hasVerifiableAge: Boolean
+    ): Boolean = hasVerifiableAge &&
+        ((edadMeses in 0..59 && edadDias in 0..29) || (edadMeses == 60 && edadDias == 0))
+
+    private fun buildUnavailableEvaluation(
+        indicador: CurvaIndicador,
+        sexo: SexoBiologico,
+        patientValue: Double,
+        decimals: Int,
+        unit: String,
+        realEdadAMD: String,
+        reason: String,
+        implementedRangeLabel: String,
+        xAxisLabel: String,
+        yAxisLabel: String
+    ): IndicatorEvaluation {
+        val formattedVal = if (patientValue.isFinite()) fmt(patientValue, decimals) else "--"
+        return IndicatorEvaluation(
+            indicador = indicador,
+            patientValue = patientValue,
+            patientValueFormatted = formattedVal,
+            unit = unit,
+            medianValue = Double.NaN,
+            medianFormatted = "No disponible",
+            normalRangeMin = Double.NaN,
+            normalRangeMax = Double.NaN,
+            zScore = Double.NaN,
+            shortClassification = "No disponible",
+            fullClassification = "No disponible por rango de referencia",
+            clinicalDetail = reason,
+            severity = ClassificationSeverity.NORMAL,
+            activeBand = CutoffBand.NORMAL_RANGE,
+            cutoffHeaderTitle = "Puntos de Corte OMS ($realEdadAMD) · Sin referencia",
+            cutoffRows = emptyList(),
+            xMin = 0f,
+            xMax = 60f,
+            yMin = 0f,
+            yMax = 100f,
+            yStepValues = emptyList(),
+            xTickLabels = emptyList(),
+            xAxisLabel = xAxisLabel,
+            yAxisLabel = yAxisLabel,
+            patientX = Float.NaN,
+            patientY = if (patientValue.isFinite()) patientValue.toFloat() else Float.NaN,
+            previousX = Float.NaN,
+            previousY = Float.NaN,
+            curves = emptyList(),
+            edadAMD = realEdadAMD,
+            grupoEtarioTitle = "Sin patrón OMS 0–5a implementado (${sexo.label}s)",
+            isReferenceAvailable = false,
+            unavailabilityTitle = "NO DISPONIBLE POR RANGO DE REFERENCIA",
+            unavailabilityReason = reason,
+            implementedRangeLabel = implementedRangeLabel
+        )
+    }
+
+    private fun buildMissingMeasurementEvaluation(
+        indicador: CurvaIndicador,
+        sexo: SexoBiologico,
+        unit: String,
+        realEdadAMD: String,
+        title: String,
+        reason: String,
+        implementedRangeLabel: String,
+        xAxisLabel: String,
+        yAxisLabel: String
+    ): IndicatorEvaluation = IndicatorEvaluation(
+        indicador = indicador,
+        patientValue = Double.NaN,
+        patientValueFormatted = "--",
+        unit = unit,
+        medianValue = Double.NaN,
+        medianFormatted = "--",
+        normalRangeMin = Double.NaN,
+        normalRangeMax = Double.NaN,
+        zScore = Double.NaN,
+        shortClassification = "Sin medición",
+        fullClassification = title,
+        clinicalDetail = reason,
+        severity = ClassificationSeverity.NORMAL,
+        activeBand = CutoffBand.NORMAL_RANGE,
+        cutoffHeaderTitle = "Puntos de Corte OMS ($realEdadAMD) · Sin medición",
+        cutoffRows = emptyList(),
+        xMin = 0f,
+        xMax = 60f,
+        yMin = 0f,
+        yMax = 100f,
+        yStepValues = emptyList(),
+        xTickLabels = emptyList(),
+        xAxisLabel = xAxisLabel,
+        yAxisLabel = yAxisLabel,
+        patientX = Float.NaN,
+        patientY = Float.NaN,
+        previousX = Float.NaN,
+        previousY = Float.NaN,
+        curves = emptyList(),
+        edadAMD = realEdadAMD,
+        grupoEtarioTitle = "$title (${sexo.label}s)",
+        isReferenceAvailable = false,
+        unavailabilityTitle = title,
+        unavailabilityReason = reason,
+        implementedRangeLabel = implementedRangeLabel
+    )
+
     fun evaluateIndicator(
         indicador: CurvaIndicador,
         sexo: SexoBiologico,
@@ -339,15 +480,207 @@ object WhoGrowthStandards {
         pesoKg: Double,
         longitudCm: Double,
         imcCalculado: Double = 0.0,
-        perimetroCefalicoCm: Double = 39.5,
-        edadDias: Int = 0
+        perimetroCefalicoCm: Double = Double.NaN,
+        edadDias: Int = 0,
+        hasVerifiableAge: Boolean = true
     ): IndicatorEvaluation {
         val isBoy = sexo == SexoBiologico.NINO
-        val safeMeses = edadMeses.coerceIn(0, 60)
-        val safeDias = edadDias.coerceIn(0, 29)
-        val edadAnios = safeMeses / 12
-        val edadMesesRest = safeMeses % 12
-        val edadAMD = "${edadAnios}a ${edadMesesRest}m ${safeDias}d"
+        val realEdadAMD = formatPatientEdadAmd(edadMeses, edadDias, hasVerifiableAge)
+        val isAgeWithinOms = isWithinOms0To60mInclusive(edadMeses, edadDias, hasVerifiableAge)
+
+        val ageOutOfRangeReason = when {
+            !hasVerifiableAge ->
+                "Edad cronológica no verificable (registre fechas de nacimiento y evaluación válidas). Rango implementado: 0m 0d a 60m 0d."
+            edadMeses < 0 || edadDias < 0 ->
+                "Edad fuera de rango válido ($realEdadAMD). Rango OMS implementado: 0m 0d a 60m 0d."
+            else ->
+                "Edad del paciente ($realEdadAMD) supera el rango máximo implementado en las tablas OMS 0–5 años (0m 0d a 60m 0d)."
+        }
+
+        val isWeightFinite = pesoKg.isFinite() && pesoKg.toFloat().isFinite() && pesoKg > 0.0
+        val isLengthFinite = longitudCm.isFinite() && longitudCm.toFloat().isFinite() && longitudCm > 0.0
+        val isImcFinite = imcCalculado.isFinite() && imcCalculado.toFloat().isFinite() && imcCalculado > 0.0
+        val isPcFinite = perimetroCefalicoCm.isFinite() && perimetroCefalicoCm.toFloat().isFinite() && perimetroCefalicoCm > 0.0
+
+        val isMeasuredValueFinite = when (indicador) {
+            CurvaIndicador.PE -> isWeightFinite
+            CurvaIndicador.TE -> isLengthFinite
+            CurvaIndicador.PT -> isWeightFinite && isLengthFinite
+            CurvaIndicador.IMCE -> isWeightFinite && isLengthFinite && isImcFinite
+            CurvaIndicador.PCE -> isPcFinite
+        }
+
+        if (indicador != CurvaIndicador.PT && (!isAgeWithinOms || !isMeasuredValueFinite)) {
+            if (!isAgeWithinOms) {
+                return when (indicador) {
+                    CurvaIndicador.PE -> buildUnavailableEvaluation(
+                        indicador = indicador,
+                        sexo = sexo,
+                        patientValue = pesoKg,
+                        decimals = 2,
+                        unit = "kg",
+                        realEdadAMD = realEdadAMD,
+                        reason = ageOutOfRangeReason,
+                        implementedRangeLabel = "0m 0d a 60m 0d (5a 0m 0d)",
+                        xAxisLabel = "Edad en años y meses",
+                        yAxisLabel = "Peso (kg)"
+                    )
+                    CurvaIndicador.TE -> buildUnavailableEvaluation(
+                        indicador = indicador,
+                        sexo = sexo,
+                        patientValue = longitudCm,
+                        decimals = 1,
+                        unit = "cm",
+                        realEdadAMD = realEdadAMD,
+                        reason = ageOutOfRangeReason,
+                        implementedRangeLabel = "0m 0d a 60m 0d (5a 0m 0d)",
+                        xAxisLabel = "Edad en años y meses",
+                        yAxisLabel = "Estatura (cm)"
+                    )
+                    CurvaIndicador.IMCE -> buildUnavailableEvaluation(
+                        indicador = indicador,
+                        sexo = sexo,
+                        patientValue = imcCalculado,
+                        decimals = 1,
+                        unit = "kg/m²",
+                        realEdadAMD = realEdadAMD,
+                        reason = ageOutOfRangeReason,
+                        implementedRangeLabel = "0m 0d a 60m 0d (5a 0m 0d)",
+                        xAxisLabel = "Edad en años y meses",
+                        yAxisLabel = "IMC (kg/m²)"
+                    )
+                    CurvaIndicador.PCE -> buildUnavailableEvaluation(
+                        indicador = indicador,
+                        sexo = sexo,
+                        patientValue = perimetroCefalicoCm,
+                        decimals = 1,
+                        unit = "cm",
+                        realEdadAMD = realEdadAMD,
+                        reason = "PC/E no disponible por rango de referencia. $ageOutOfRangeReason",
+                        implementedRangeLabel = "0m 0d a 60m 0d (5a 0m 0d)",
+                        xAxisLabel = "Edad en años y meses",
+                        yAxisLabel = "Perímetro Cefálico (cm)"
+                    ).copy(
+                        fullClassification = "PC/E no disponible por rango de referencia"
+                    )
+                    CurvaIndicador.PT -> error("Unreachable")
+                }
+            } else {
+                return when (indicador) {
+                    CurvaIndicador.PE -> buildMissingMeasurementEvaluation(
+                        indicador = indicador,
+                        sexo = sexo,
+                        unit = "kg",
+                        realEdadAMD = realEdadAMD,
+                        title = "Peso no registrado",
+                        reason = "Peso corporal no registrado. Ingrese una medición válida en kilogramos (kg) para graficar y clasificar Peso para la Edad (P/E).",
+                        implementedRangeLabel = "0m 0d a 60m 0d (5a 0m 0d)",
+                        xAxisLabel = "Edad en años y meses",
+                        yAxisLabel = "Peso (kg)"
+                    )
+                    CurvaIndicador.TE -> buildMissingMeasurementEvaluation(
+                        indicador = indicador,
+                        sexo = sexo,
+                        unit = "cm",
+                        realEdadAMD = realEdadAMD,
+                        title = "Talla/longitud no registrada",
+                        reason = "Talla o longitud corporal no registrada. Ingrese una medición válida en centímetros (cm) para graficar y clasificar Talla para la Edad (T/E).",
+                        implementedRangeLabel = "0m 0d a 60m 0d (5a 0m 0d)",
+                        xAxisLabel = "Edad en años y meses",
+                        yAxisLabel = "Estatura (cm)"
+                    )
+                    CurvaIndicador.IMCE -> {
+                        val missingImcTitle = when {
+                            !isWeightFinite && !isLengthFinite -> "Peso y talla/longitud no registrados"
+                            !isWeightFinite -> "Peso corporal no registrado para calcular IMC/E"
+                            else -> "Talla/longitud no registrada para calcular IMC/E"
+                        }
+                        buildMissingMeasurementEvaluation(
+                            indicador = indicador,
+                            sexo = sexo,
+                            unit = "kg/m²",
+                            realEdadAMD = realEdadAMD,
+                            title = missingImcTitle,
+                            reason = "$missingImcTitle. Ingrese peso (kg) y talla/longitud (cm) válidos para calcular y clasificar IMC para la Edad (IMC/E).",
+                            implementedRangeLabel = "0m 0d a 60m 0d (5a 0m 0d)",
+                            xAxisLabel = "Edad en años y meses",
+                            yAxisLabel = "IMC (kg/m²)"
+                        )
+                    }
+                    CurvaIndicador.PCE -> buildMissingMeasurementEvaluation(
+                        indicador = indicador,
+                        sexo = sexo,
+                        unit = "cm",
+                        realEdadAMD = realEdadAMD,
+                        title = "Perímetro cefálico no registrado",
+                        reason = "Perímetro cefálico no registrado. Ingrese una medición válida en centímetros para graficar y clasificar PC/Edad.",
+                        implementedRangeLabel = "0m 0d a 60m 0d (5a 0m 0d)",
+                        xAxisLabel = "Edad en años y meses",
+                        yAxisLabel = "Perímetro Cefálico (cm)"
+                    )
+                    CurvaIndicador.PT -> error("Unreachable")
+                }
+            }
+        }
+
+        if (indicador == CurvaIndicador.PT) {
+            val isLengthInPtDomain = isLengthFinite && longitudCm in 45.0..110.0
+            if (!isAgeWithinOms) {
+                val ptReason = if (!isLengthInPtDomain) {
+                    "$ageOutOfRangeReason Además, la talla/longitud (${if (longitudCm.isFinite()) fmt(longitudCm, 1) else "--"} cm) está fuera del rango OMS P/T (45.0 a 110.0 cm)."
+                } else {
+                    ageOutOfRangeReason
+                }
+                return buildUnavailableEvaluation(
+                    indicador = indicador,
+                    sexo = sexo,
+                    patientValue = pesoKg,
+                    decimals = 2,
+                    unit = "kg",
+                    realEdadAMD = realEdadAMD,
+                    reason = ptReason,
+                    implementedRangeLabel = "0m 0d a 60m 0d · 45.0 a 110.0 cm",
+                    xAxisLabel = "Estatura / Longitud corporal (cm)",
+                    yAxisLabel = "Peso (kg)"
+                )
+            }
+            if (!isWeightFinite || !isLengthFinite) {
+                val missingPtTitle = when {
+                    !isWeightFinite && !isLengthFinite -> "Peso y talla/longitud no registrados"
+                    !isWeightFinite -> "Peso corporal no registrado para calcular P/T"
+                    else -> "Talla/longitud no registrada para calcular P/T"
+                }
+                return buildMissingMeasurementEvaluation(
+                    indicador = indicador,
+                    sexo = sexo,
+                    unit = "kg",
+                    realEdadAMD = realEdadAMD,
+                    title = missingPtTitle,
+                    reason = "$missingPtTitle. Ingrese peso (kg) y talla/longitud (cm) válidos para graficar y clasificar Peso para la Talla (P/T).",
+                    implementedRangeLabel = "0m 0d a 60m 0d · 45.0 a 110.0 cm",
+                    xAxisLabel = "Estatura / Longitud corporal (cm)",
+                    yAxisLabel = "Peso (kg)"
+                )
+            }
+            if (!isLengthInPtDomain) {
+                return buildUnavailableEvaluation(
+                    indicador = indicador,
+                    sexo = sexo,
+                    patientValue = pesoKg,
+                    decimals = 2,
+                    unit = "kg",
+                    realEdadAMD = realEdadAMD,
+                    reason = "Talla/longitud (${fmt(longitudCm, 1)} cm) fuera del rango OMS implementado para P/T (45.0 a 110.0 cm).",
+                    implementedRangeLabel = "0m 0d a 60m 0d · 45.0 a 110.0 cm",
+                    xAxisLabel = "Estatura / Longitud corporal (cm)",
+                    yAxisLabel = "Peso (kg)"
+                )
+            }
+        }
+
+        val safeMeses = edadMeses
+        val safeDias = edadDias
+        val edadAMD = realEdadAMD
 
         val ageF = (safeMeses.toFloat() + (safeDias / 30f)).coerceIn(0f, 60f)
         val isExtendedAge = safeMeses >= 24
@@ -586,7 +919,7 @@ object WhoGrowthStandards {
                 val isExtendedLen = safeMeses >= 24 || longitudCm > 95.0
                 val ptXMin = if (isExtendedLen) 65f else 45f
                 val ptXMax = if (isExtendedLen) 110f else 95f
-                val lengthF = longitudCm.toFloat().coerceIn(45f, 110f)
+                val lengthF = longitudCm.toFloat()
                 val effectiveXMin = minOf(ptXMin, (lengthF - 2f).coerceAtLeast(45f))
                 val effectiveXMax = maxOf(ptXMax, (lengthF + 2f).coerceAtMost(110f))
                 val ref = interpolateRef(table, lengthF)
@@ -904,22 +1237,48 @@ object WhoGrowthStandards {
         teEval: IndicatorEvaluation,
         ptEval: IndicatorEvaluation,
         imcEval: IndicatorEvaluation,
-        edadDias: Int = 0
+        edadDias: Int = 0,
+        hasVerifiableAge: Boolean = true,
+        hasPerimetroCefalicoMeasurement: Boolean = true,
+        hasPesoMeasurement: Boolean = pesoKg.isFinite() && pesoKg.toFloat().isFinite() && pesoKg > 0.0,
+        hasLongitudMeasurement: Boolean = longitudCm.isFinite() && longitudCm.toFloat().isFinite() && longitudCm > 0.0
     ): GlobalDiagnosticSummary {
         val isBoy = sexo == SexoBiologico.NINO
-        val ageF = (edadMeses.coerceIn(0, 60).toFloat() + (edadDias.coerceIn(0, 29) / 30f)).coerceIn(0f, 60f)
+        val isAgeWithinOms = isWithinOms0To60mInclusive(edadMeses, edadDias, hasVerifiableAge)
+        val realEdadAMD = formatPatientEdadAmd(edadMeses, edadDias, hasVerifiableAge)
+
+        val isWeightFinite = hasPesoMeasurement && pesoKg.isFinite() && pesoKg.toFloat().isFinite() && pesoKg > 0.0
+        val isLengthFinite = hasLongitudMeasurement && longitudCm.isFinite() && longitudCm.toFloat().isFinite() && longitudCm > 0.0
+        val isPcFinite = perimetroCefalicoCm.isFinite() && perimetroCefalicoCm.toFloat().isFinite() && perimetroCefalicoCm > 0.0
+        val outOfRangeIndicators = listOfNotNull(
+            if (!isAgeWithinOms || (hasPesoMeasurement && !peEval.isReferenceAvailable)) "P/E" else null,
+            if (!isAgeWithinOms || (hasLongitudMeasurement && !teEval.isReferenceAvailable)) "T/E" else null,
+            if (!isAgeWithinOms || (hasPesoMeasurement && hasLongitudMeasurement && !ptEval.isReferenceAvailable)) "P/T" else null,
+            if (!isAgeWithinOms || (hasPesoMeasurement && hasLongitudMeasurement && !imcEval.isReferenceAvailable)) "IMC/E" else null,
+            if (!isAgeWithinOms || (hasPerimetroCefalicoMeasurement && !isPcFinite)) "PC/E" else null
+        )
+
+        val ageF = (edadMeses.toFloat() + (edadDias / 30f)).coerceIn(0f, 60f)
         val pcTable = if (isBoy) pcBoys else pcGirls
         val pcRef = interpolateRef(pcTable, ageF)
-        val pcZ = computeZScore(perimetroCefalicoCm, pcRef)
-        val pcBand = bandForZ(pcZ)
-        val pcSeverity = severityForBand(pcBand)
-        val pcClass = when (pcBand) {
-            CutoffBand.ABOVE_PLUS_3, CutoffBand.PLUS_2_TO_3 -> "Macrocefalia"
-            CutoffBand.NORMAL_RANGE -> "Normocéfalo"
-            CutoffBand.MINUS_2_TO_3 -> "Riesgo Microcef."
-            CutoffBand.BELOW_MINUS_3 -> "Microcefalia"
+        val pcZRaw = if (isAgeWithinOms && hasPerimetroCefalicoMeasurement && isPcFinite) computeZScore(perimetroCefalicoCm, pcRef) else Double.NaN
+        val pcAvailable = isAgeWithinOms && hasPerimetroCefalicoMeasurement && isPcFinite && pcZRaw.isFinite()
+        val pcZ = if (pcAvailable) pcZRaw else Double.NaN
+        val pcBand = if (pcAvailable) bandForZ(pcZ) else CutoffBand.NORMAL_RANGE
+        val pcSeverity = if (pcAvailable) severityForBand(pcBand) else ClassificationSeverity.NORMAL
+        val pcClass = when {
+            !isAgeWithinOms -> "PC/E no disponible por rango de referencia"
+            !pcAvailable -> "Sin medición"
+            else -> when (pcBand) {
+                CutoffBand.ABOVE_PLUS_3, CutoffBand.PLUS_2_TO_3 -> "Macrocefalia"
+                CutoffBand.NORMAL_RANGE -> "Normocéfalo"
+                CutoffBand.MINUS_2_TO_3 -> "Riesgo Microcef."
+                CutoffBand.BELOW_MINUS_3 -> "Microcefalia"
+            }
         }
         val pcPercentile = when {
+            !isAgeWithinOms -> "Sin ref."
+            !pcAvailable -> "Perímetro cefálico no registrado"
             pcZ >= 2.0 -> "Percentil >97"
             pcZ >= 1.0 -> "Percentil 85"
             pcZ <= -2.0 -> "Percentil <3"
@@ -927,41 +1286,208 @@ object WhoGrowthStandards {
             else -> "Percentil\n50"
         }
 
-        // Consolidated Nutritional Diagnosis per NTS N° 238-MINSA/DGIESP-2025 (Tabla N° 3, p. 30)
-        val worstSeverity = listOf(peEval.severity, teEval.severity, ptEval.severity, imcEval.severity)
-            .maxByOrNull { it.ordinal } ?: ClassificationSeverity.NORMAL
+        val availableNutritional = listOf(peEval, teEval, ptEval, imcEval)
+            .filter { it.isReferenceAvailable && it.zScore.isFinite() }
+        if (!isAgeWithinOms || availableNutritional.isEmpty()) {
+            val isMissingAnthropometryInRange = isAgeWithinOms && !isWeightFinite && !isLengthFinite
+            val unavailableTitle = if (isMissingAnthropometryInRange) {
+                "Sin mediciones antropométricas registradas"
+            } else {
+                "NO DISPONIBLE POR RANGO DE REFERENCIA"
+            }
+            val reason = when {
+                !hasVerifiableAge ->
+                    "No existe edad cronológica verificable para consultar tablas OMS 0–60 meses. La evaluación EDI permanece operativa."
+                edadMeses < 0 || edadDias < 0 ->
+                    "La edad registrada ($realEdadAMD) está fuera del rango válido OMS (0m 0d a 60m 0d)."
+                isMissingAnthropometryInRange ->
+                    "Sin mediciones antropométricas registradas. Ingrese peso (kg) y/o talla/longitud (cm) para calcular el diagnóstico nutricional OMS."
+                isAgeWithinOms ->
+                    "No existen mediciones finitas válidas para calcular indicadores OMS."
+                else ->
+                    "Edad actual ($realEdadAMD) fuera del rango OMS implementado (0m 0d a 60m 0d). Se conservan las mediciones registradas; la evaluación EDI no se bloquea."
+            }
+            return GlobalDiagnosticSummary(
+                title = unavailableTitle,
+                zGlobal = Double.NaN,
+                description = reason,
+                severity = ClassificationSeverity.NORMAL,
+                pcZScore = pcZ,
+                pcMedian = if (pcAvailable) pcRef.median.toDouble() else Double.NaN,
+                pcClassification = pcClass,
+                pcSeverity = pcSeverity,
+                pcPercentileText = pcPercentile,
+                pesoPrevioEstimadoKg = Double.NaN,
+                gananciaGramosMes = 0,
+                gananciaGramosDia = 0,
+                minimoGramosMesEsperado = 0,
+                minimoGramosDiaEsperado = 0,
+                catchUpBadgeText = if (isMissingAnthropometryInRange) "Sin\nmedición" else "Fuera de\nrango",
+                gananciaStatusTitle = if (isMissingAnthropometryInRange) "Sin medición de peso registrada" else "No disponible por rango de referencia",
+                gananciaSeverity = ClassificationSeverity.NORMAL,
+                isAvailable = false,
+                pcAvailable = pcAvailable,
+                unavailabilityReason = reason,
+                availableIndicatorsCount = 0,
+                outOfRangeIndicators = outOfRangeIndicators,
+                completeness = GlobalDiagnosisCompleteness.UNAVAILABLE
+            )
+        }
 
-        val (globalTitle, globalDesc, globalZ) = when {
-            ptEval.activeBand == CutoffBand.BELOW_MINUS_3 || peEval.activeBand == CutoffBand.BELOW_MINUS_3 -> Triple(
-                "Desnutrición Severa Detectada",
-                "Déficit ponderal severo (< -3 DE) · Requiere intervención nutricional inmediata",
-                minOf(peEval.zScore, ptEval.zScore)
-            )
-            teEval.activeBand == CutoffBand.BELOW_MINUS_3 || teEval.activeBand == CutoffBand.MINUS_2_TO_3 -> Triple(
-                "Retraso del Crecimiento Longitudinal (${teEval.shortClassification})",
-                "Compromiso en longitud para la edad (T/E = ${fmt(teEval.zScore, 1)} DE) · Seguimiento CRED",
-                teEval.zScore
-            )
-            ptEval.activeBand == CutoffBand.ABOVE_PLUS_3 || imcEval.activeBand == CutoffBand.ABOVE_PLUS_3 || peEval.activeBand == CutoffBand.ABOVE_PLUS_3 -> Triple(
-                "Obesidad Infantil (> +3 DE)",
-                "Exceso ponderal severo en curvas OMS · Requiere consejería nutricional especializada",
-                maxOf(ptEval.zScore, imcEval.zScore)
-            )
-            ptEval.activeBand == CutoffBand.PLUS_2_TO_3 || imcEval.activeBand == CutoffBand.PLUS_2_TO_3 || peEval.activeBand == CutoffBand.PLUS_2_TO_3 -> Triple(
-                "Sobrepeso (+2 a +3 DE)",
-                "Ganancia ponderal por encima del canal esperado · Ajustar pautas de alimentación",
-                maxOf(ptEval.zScore, peEval.zScore)
-            )
-            ptEval.activeBand == CutoffBand.MINUS_2_TO_3 || peEval.activeBand == CutoffBand.MINUS_2_TO_3 -> Triple(
-                "Riesgo de Desnutrición / Alerta CRED",
-                "Indicadores entre -2 y -3 DE · Reforzar lactancia y control antropométrico cercano",
-                minOf(peEval.zScore, ptEval.zScore)
-            )
-            else -> Triple(
-                "Eutrófico / Crecimiento Adecuado",
-                "Sin desnutrición aguda ni crónica · Canal de crecimiento armónico",
-                peEval.zScore
-            )
+        // Consolidated Nutritional Diagnosis per NTS N° 238-MINSA/DGIESP-2025 (Tabla N° 3, p. 30)
+        // Requires P/T (and core nutritional indicators) to assert complete global normality.
+        val missingNutritional = listOfNotNull(
+            if (!peEval.isReferenceAvailable || !peEval.zScore.isFinite()) "P/E" else null,
+            if (!teEval.isReferenceAvailable || !teEval.zScore.isFinite()) "T/E" else null,
+            if (!ptEval.isReferenceAvailable || !ptEval.zScore.isFinite()) "P/T" else null,
+            if (!imcEval.isReferenceAvailable || !imcEval.zScore.isFinite()) "IMC/E" else null
+        )
+        val completeness = if (missingNutritional.isNotEmpty()) {
+            GlobalDiagnosisCompleteness.PARTIAL
+        } else {
+            GlobalDiagnosisCompleteness.COMPLETE
+        }
+        val missingLabel = missingNutritional.joinToString(", ")
+
+        val worstSeverity = availableNutritional
+            .maxByOrNull { it.severity.ordinal }
+            ?.severity ?: ClassificationSeverity.NORMAL
+
+        val ptSevereBelow3 = ptEval.isReferenceAvailable && ptEval.zScore.isFinite() && ptEval.activeBand == CutoffBand.BELOW_MINUS_3
+        val peSevereBelow3 = peEval.isReferenceAvailable && peEval.zScore.isFinite() && peEval.activeBand == CutoffBand.BELOW_MINUS_3
+        val imcSevereBelow3 = imcEval.isReferenceAvailable && imcEval.zScore.isFinite() && imcEval.activeBand == CutoffBand.BELOW_MINUS_3
+        val teChronic = teEval.isReferenceAvailable && teEval.zScore.isFinite() &&
+            (teEval.activeBand == CutoffBand.BELOW_MINUS_3 || teEval.activeBand == CutoffBand.MINUS_2_TO_3)
+        val teHigh = teEval.isReferenceAvailable && teEval.zScore.isFinite() &&
+            (teEval.activeBand == CutoffBand.ABOVE_PLUS_3 || teEval.activeBand == CutoffBand.PLUS_2_TO_3)
+        val ptAbove3 = ptEval.isReferenceAvailable && ptEval.zScore.isFinite() && ptEval.activeBand == CutoffBand.ABOVE_PLUS_3
+        val imcAbove3 = imcEval.isReferenceAvailable && imcEval.zScore.isFinite() && imcEval.activeBand == CutoffBand.ABOVE_PLUS_3
+        val peAbove3 = peEval.isReferenceAvailable && peEval.zScore.isFinite() && peEval.activeBand == CutoffBand.ABOVE_PLUS_3
+        val ptPlus2To3 = ptEval.isReferenceAvailable && ptEval.zScore.isFinite() && ptEval.activeBand == CutoffBand.PLUS_2_TO_3
+        val imcPlus2To3 = imcEval.isReferenceAvailable && imcEval.zScore.isFinite() && imcEval.activeBand == CutoffBand.PLUS_2_TO_3
+        val pePlus2To3 = peEval.isReferenceAvailable && peEval.zScore.isFinite() && peEval.activeBand == CutoffBand.PLUS_2_TO_3
+        val ptMinus2To3 = ptEval.isReferenceAvailable && ptEval.zScore.isFinite() && ptEval.activeBand == CutoffBand.MINUS_2_TO_3
+        val peMinus2To3 = peEval.isReferenceAvailable && peEval.zScore.isFinite() && peEval.activeBand == CutoffBand.MINUS_2_TO_3
+        val imcMinus2To3 = imcEval.isReferenceAvailable && imcEval.zScore.isFinite() && imcEval.activeBand == CutoffBand.MINUS_2_TO_3
+
+        fun minAvailableZ(vararg evals: IndicatorEvaluation): Double =
+            evals.filter { it.isReferenceAvailable && it.zScore.isFinite() }
+                .minOfOrNull { it.zScore } ?: Double.NaN
+
+        fun maxAvailableZ(vararg evals: IndicatorEvaluation): Double =
+            evals.filter { it.isReferenceAvailable && it.zScore.isFinite() }
+                .maxOfOrNull { it.zScore } ?: Double.NaN
+
+        val (globalTitle, globalDesc, globalZ) = if (completeness == GlobalDiagnosisCompleteness.PARTIAL) {
+            val missingSuffix = when {
+                isWeightFinite && !isLengthFinite ->
+                    "Valoración global parcial (solo Peso/Edad; falta registrar talla/longitud para evaluar T/E, P/T e IMC/E)."
+                !isWeightFinite && isLengthFinite ->
+                    "Valoración global parcial (solo Talla/Edad; falta registrar peso para evaluar P/E, P/T e IMC/E)."
+                else ->
+                    "Valoración global parcial: $missingLabel no disponible."
+            }
+            when {
+                ptSevereBelow3 || peSevereBelow3 || imcSevereBelow3 -> Triple(
+                    "Desnutrición Severa Detectada (Valoración parcial)",
+                    "Déficit ponderal severo (< -3 DE) en indicadores disponibles · Requiere intervención nutricional inmediata. $missingSuffix",
+                    minAvailableZ(peEval, ptEval, imcEval)
+                )
+                teChronic -> Triple(
+                    "Retraso Longitudinal: ${teEval.shortClassification} (Valoración parcial)",
+                    "Compromiso en talla/longitud para la edad (T/E = ${fmt(teEval.zScore, 1)} DE) · Seguimiento CRED. $missingSuffix",
+                    teEval.zScore
+                )
+                ptAbove3 || imcAbove3 || peAbove3 -> Triple(
+                    "Obesidad Infantil (> +3 DE) · Valoración parcial",
+                    "Exceso ponderal severo en indicadores disponibles · Consejería nutricional especializada. $missingSuffix",
+                    maxAvailableZ(ptEval, imcEval, peEval)
+                )
+                ptPlus2To3 || imcPlus2To3 || pePlus2To3 -> Triple(
+                    "Sobrepeso (+2 a +3 DE) · Valoración parcial",
+                    "Ganancia ponderal por encima del canal esperado en indicadores disponibles · $missingSuffix",
+                    maxAvailableZ(ptEval, peEval, imcEval)
+                )
+                ptMinus2To3 || peMinus2To3 || imcMinus2To3 -> Triple(
+                    "Riesgo de Desnutrición / Alerta CRED (Valoración parcial)",
+                    "Indicadores disponibles entre -2 y -3 DE · Reforzar control antropométrico. $missingSuffix",
+                    minAvailableZ(peEval, ptEval, imcEval)
+                )
+                teHigh -> Triple(
+                    "${teEval.fullClassification} · Valoración parcial",
+                    "Talla por encima de +2 DE (T/E = ${fmt(teEval.zScore, 1)} DE) · $missingSuffix",
+                    teEval.zScore
+                )
+                else -> when {
+                    isWeightFinite && !isLengthFinite -> Triple(
+                        "Valoración Nutricional Parcial (solo P/E · sin talla)",
+                        "Peso para la edad en rango normal (${peEval.shortClassification}); falta registrar talla/longitud para evaluar T/E, P/T e IMC/E y emitir dictamen global completo.",
+                        peEval.zScore
+                    )
+                    !isWeightFinite && isLengthFinite -> Triple(
+                        "Valoración Nutricional Parcial (solo T/E · sin peso)",
+                        "Talla/longitud para la edad en rango normal (${teEval.shortClassification}); falta registrar peso para evaluar P/E, P/T e IMC/E y emitir dictamen global completo.",
+                        teEval.zScore
+                    )
+                    else -> {
+                        val tallaDetail = if (longitudCm.isFinite()) " (talla ${fmt(longitudCm, 1)} cm fuera de ref. 45.0–110.0 cm)" else ""
+                        Triple(
+                            "Valoración Nutricional Parcial (sin $missingLabel)",
+                            "Indicadores disponibles en rango normal; $missingLabel no disponible$tallaDetail, por lo que no puede descartarse desnutrición aguda ni emitirse dictamen global completo.",
+                            if (peEval.isReferenceAvailable && peEval.zScore.isFinite()) {
+                                peEval.zScore
+                            } else {
+                                availableNutritional.first().zScore
+                            }
+                        )
+                    }
+                }
+            }
+        } else {
+            when {
+                ptSevereBelow3 || peSevereBelow3 -> Triple(
+                    "Desnutrición Severa Detectada",
+                    "Déficit ponderal severo (< -3 DE) · Requiere intervención nutricional inmediata",
+                    minAvailableZ(peEval, ptEval)
+                )
+                teChronic -> Triple(
+                    "Retraso del Crecimiento Longitudinal (${teEval.shortClassification})",
+                    "Compromiso en longitud para la edad (T/E = ${fmt(teEval.zScore, 1)} DE) · Seguimiento CRED",
+                    teEval.zScore
+                )
+                ptAbove3 || imcAbove3 || peAbove3 -> Triple(
+                    "Obesidad Infantil (> +3 DE)",
+                    "Exceso ponderal severo en curvas OMS · Requiere consejería nutricional especializada",
+                    maxAvailableZ(ptEval, imcEval, peEval)
+                )
+                ptPlus2To3 || imcPlus2To3 || pePlus2To3 -> Triple(
+                    "Sobrepeso (+2 a +3 DE)",
+                    "Ganancia ponderal por encima del canal esperado · Ajustar pautas de alimentación",
+                    maxAvailableZ(ptEval, peEval, imcEval)
+                )
+                ptMinus2To3 || peMinus2To3 -> Triple(
+                    "Riesgo de Desnutrición / Alerta CRED",
+                    "Indicadores entre -2 y -3 DE · Reforzar lactancia y control antropométrico cercano",
+                    minAvailableZ(peEval, ptEval)
+                )
+                else -> Triple(
+                    "Eutrófico / Crecimiento Adecuado",
+                    "Sin desnutrición aguda ni crónica · Canal de crecimiento armónico",
+                    if (peEval.isReferenceAvailable && peEval.zScore.isFinite()) {
+                        peEval.zScore
+                    } else {
+                        availableNutritional.first().zScore
+                    }
+                )
+            }
+        }
+
+        val finalGlobalSeverity = if (completeness == GlobalDiagnosisCompleteness.PARTIAL &&
+            worstSeverity == ClassificationSeverity.NORMAL
+        ) {
+            ClassificationSeverity.WARNING
+        } else {
+            worstSeverity
         }
 
         // Physiological minimum ponderal velocity expected by age in months per MINSA CRED / OMS
@@ -973,47 +1499,94 @@ object WhoGrowthStandards {
             else -> 150 to 5
         }
 
-        // Previous control reference weight & ponderal velocity
-        val prevWeightKg = if (edadMeses == 2 && isBoy) {
-            4.10
+        val peZValid: Double? = peEval.takeIf { it.isReferenceAvailable && it.zScore.isFinite() }?.zScore
+        val ptZValid: Double? = ptEval.takeIf { it.isReferenceAvailable && it.zScore.isFinite() }?.zScore
+
+        val prevWeightKg: Double
+        val gMes: Int
+        val gDia: Int
+        val gananciaTitle: String
+        val gananciaSev: ClassificationSeverity
+        val catchUpBadge: String
+
+        if (!pesoKg.isFinite() || peZValid == null) {
+            prevWeightKg = Double.NaN
+            gMes = 0
+            gDia = 0
+            gananciaTitle = "Velocidad ponderal no disponible (sin P/E)"
+            gananciaSev = ClassificationSeverity.WARNING
+            catchUpBadge = "No disp."
         } else {
-            val prevAge = (ageF - 1f).coerceAtLeast(0f)
-            val peTable = if (isBoy) peBoys else peGirls
-            val prevRef = interpolateRef(peTable, prevAge)
-            val currRef = interpolateRef(peTable, ageF)
-            val ratio = if (currRef.median > 0.1f) (pesoKg / currRef.median.toDouble()).coerceIn(0.65, 1.45) else 1.0
-            (prevRef.median.toDouble() * ratio).coerceAtLeast(2.0).coerceAtMost((pesoKg - 0.10).coerceAtLeast(2.0))
+            prevWeightKg = if (edadMeses == 2 && isBoy) {
+                4.10
+            } else {
+                val prevAge = (ageF - 1f).coerceAtLeast(0f)
+                val peTable = if (isBoy) peBoys else peGirls
+                val prevRef = interpolateRef(peTable, prevAge)
+                val currRef = interpolateRef(peTable, ageF)
+                val ratio = if (currRef.median > 0.1f) (pesoKg / currRef.median.toDouble()).coerceIn(0.65, 1.45) else 1.0
+                (prevRef.median.toDouble() * ratio).coerceAtLeast(2.0).coerceAtMost((pesoKg - 0.10).coerceAtLeast(2.0))
+            }
+
+            val deltaGramos = ((pesoKg - prevWeightKg) * 1000.0).toInt().coerceAtLeast(90)
+            gMes = if (edadMeses == 2 && isBoy && abs(pesoKg - 5.40) < 0.01) 1050 else deltaGramos
+            gDia = (gMes / 30).coerceAtLeast(3)
+
+            val velocityResult = if (ptZValid == null) {
+                when {
+                    gMes < (minGramosMes * 0.68).toInt() || peZValid < -3.0 -> Triple(
+                        "Ganancia Ponderal Insuficiente",
+                        ClassificationSeverity.SEVERE,
+                        "Estanc.\nPonderal"
+                    )
+                    gMes < minGramosMes || peZValid < -2.0 -> Triple(
+                        "Ganancia Ponderal Lenta (Alerta)",
+                        ClassificationSeverity.WARNING,
+                        "Velocidad\nLenta"
+                    )
+                    else -> Triple(
+                        "Velocidad Estimada Parcial (sin P/T)",
+                        ClassificationSeverity.WARNING,
+                        "Parcial\nsin P/T"
+                    )
+                }
+            } else {
+                when {
+                    gMes >= minGramosMes && peZValid >= -2.0 && ptZValid >= -2.0 -> Triple(
+                        "Ganancia Ponderal Óptima",
+                        ClassificationSeverity.NORMAL,
+                        "Catch-Up\nÓptimo"
+                    )
+                    gMes >= (minGramosMes * 0.68).toInt() && peZValid >= -3.0 && ptZValid >= -3.0 -> Triple(
+                        "Ganancia Ponderal Lenta (Alerta)",
+                        ClassificationSeverity.WARNING,
+                        "Velocidad\nLenta"
+                    )
+                    else -> Triple(
+                        "Ganancia Ponderal Insuficiente",
+                        ClassificationSeverity.SEVERE,
+                        "Estanc.\nPonderal"
+                    )
+                }
+            }
+            gananciaTitle = velocityResult.first
+            gananciaSev = velocityResult.second
+            catchUpBadge = velocityResult.third
         }
 
-        val deltaGramos = ((pesoKg - prevWeightKg) * 1000.0).toInt().coerceAtLeast(90)
-        val gMes = if (edadMeses == 2 && isBoy && abs(pesoKg - 5.40) < 0.01) 1050 else deltaGramos
-        val gDia = (gMes / 30).coerceAtLeast(3)
-
-        val (gananciaTitle, gananciaSev, catchUpBadge) = when {
-            gMes >= minGramosMes && peEval.zScore >= -2.0 && ptEval.zScore >= -2.0 -> Triple(
-                "Ganancia Ponderal Óptima",
-                ClassificationSeverity.NORMAL,
-                "Catch-Up\nÓptimo"
-            )
-            gMes >= (minGramosMes * 0.68).toInt() && peEval.zScore >= -3.0 && ptEval.zScore >= -3.0 -> Triple(
-                "Ganancia Ponderal Lenta (Alerta)",
-                ClassificationSeverity.WARNING,
-                "Velocidad\nLenta"
-            )
-            else -> Triple(
-                "Ganancia Ponderal Insuficiente",
-                ClassificationSeverity.SEVERE,
-                "Estanc.\nPonderal"
-            )
+        val partialNote = if (outOfRangeIndicators.isNotEmpty()) {
+            "Valoración parcial · Indicador(es) fuera de rango OMS implementado: ${outOfRangeIndicators.joinToString(", ")}"
+        } else {
+            ""
         }
 
         return GlobalDiagnosticSummary(
             title = globalTitle,
             zGlobal = globalZ,
             description = globalDesc,
-            severity = worstSeverity,
+            severity = finalGlobalSeverity,
             pcZScore = pcZ,
-            pcMedian = pcRef.median.toDouble(),
+            pcMedian = if (pcAvailable) pcRef.median.toDouble() else Double.NaN,
             pcClassification = pcClass,
             pcSeverity = pcSeverity,
             pcPercentileText = pcPercentile,
@@ -1024,7 +1597,13 @@ object WhoGrowthStandards {
             minimoGramosDiaEsperado = minGramosDia,
             catchUpBadgeText = catchUpBadge,
             gananciaStatusTitle = gananciaTitle,
-            gananciaSeverity = gananciaSev
+            gananciaSeverity = gananciaSev,
+            isAvailable = true,
+            pcAvailable = pcAvailable,
+            unavailabilityReason = partialNote,
+            availableIndicatorsCount = availableNutritional.size + if (pcAvailable) 1 else 0,
+            outOfRangeIndicators = outOfRangeIndicators,
+            completeness = completeness
         )
     }
 }

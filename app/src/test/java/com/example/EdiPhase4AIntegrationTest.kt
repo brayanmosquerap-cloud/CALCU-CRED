@@ -266,6 +266,9 @@ class EdiPhase4AIntegrationTest {
     @Test
     fun `06 global semaphore VERDE AMARILLO ROJO INCOMPLETE rendered exclusively from EdiGlobalSemaphoreEngine`() {
         val vm = CredEdiViewModel()
+        vm.updateFechaEvaluacion("25/02/2025")
+        vm.updateFechaNacimiento("10/11/2024")
+        vm.confirmEdiTermWithoutWeeks()
         vm.selectTab(AppTab.EDI)
         vm.selectEdiGroupFromBank(3)
         vm.navigateEdiView(EdiInternalView.RESULTS_TRACEABILITY)
@@ -317,6 +320,9 @@ class EdiPhase4AIntegrationTest {
     @Test
     fun `08 optional FRB and ALE in groups 5 to 15 never block global semaphore`() {
         val vm = CredEdiViewModel()
+        vm.updateFechaEvaluacion("20/02/2025")
+        vm.updateFechaNacimiento("15/05/2023")
+        vm.confirmEdiTermWithoutWeeks()
         vm.selectTab(AppTab.EDI)
         vm.selectEdiGroupFromBank(10)
 
@@ -439,6 +445,9 @@ class EdiPhase4AIntegrationTest {
     @Test
     fun `11 pdf export in Window 4 UI exports official sheet when complete and draft when incomplete`() {
         val vm = CredEdiViewModel()
+        vm.updateFechaEvaluacion("20/02/2025")
+        vm.updateFechaNacimiento("05/12/2024")
+        vm.confirmEdiTermWithoutWeeks()
         vm.selectTab(AppTab.EDI)
         vm.selectEdiGroupFromBank(2)
         fillAllMandatoryForGroupAsGreen(vm, 2)
@@ -480,6 +489,7 @@ class EdiPhase4AIntegrationTest {
         // Tab 1: Calculadora CRED
         vm.updateFechaNacimiento("01/10/2024")
         vm.updateFechaEvaluacion("16/02/2025")
+        vm.confirmEdiTermWithoutWeeks()
         vm.updatePesoInput("7.00")
         vm.updateLongitudInput("64.0")
         vm.updatePerimetroCefalicoInput("41.5")

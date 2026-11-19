@@ -71,10 +71,17 @@ class ExampleRobolectricTest {
         assertFalse(viewModel.uiState.value.aplicaEdadCorregida)
         assertEquals("No aplica edad corregida", viewModel.uiState.value.edadCorregidaAMD)
 
-        // Manually activating Prematurez (32w EG -> +56 days -> fecha ajustada 10/12/2024)
-        // Eval 15/02/2025 -> 0a 4m 0d chronological, 0a 2m 5d corrected on real calendar
+        // Manually activating Prematurez: before confirming weeks, corrected age is pending and FRB is not auto-checked
         viewModel.togglePrematurez(true)
         assertTrue(viewModel.uiState.value.esPrematuro)
+        assertFalse(viewModel.uiState.value.aplicaEdadCorregida)
+        assertTrue(viewModel.uiState.value.isCorrectedAgePending)
+        assertEquals("EDAD CORREGIDA PENDIENTE", viewModel.uiState.value.edadCorregidaAMD)
+        assertFalse(viewModel.uiState.value.frbItems.first { it.id == 1 }.checked)
+
+        // Explicitly confirming 32w EG (without moving slider) -> +56 days -> fecha ajustada 10/12/2024
+        // Eval 15/02/2025 -> 0a 4m 0d chronological, 0a 2m 5d corrected on real calendar
+        viewModel.confirmCurrentEgSemanas()
         assertTrue(viewModel.uiState.value.aplicaEdadCorregida)
         assertTrue(viewModel.uiState.value.frbItems.first { it.id == 1 }.checked)
         assertEquals(0, viewModel.uiState.value.edadCronologicaAnios)
@@ -261,6 +268,11 @@ class ExampleRobolectricTest {
         viewModel.updateFechaNacimiento("15/10/2024")
         viewModel.updateFechaEvaluacion("15/02/2025")
         viewModel.togglePrematurez(true)
+        viewModel.confirmCurrentEgSemanas()
+        // ANTRO-02: Explicitly enter weight and height now that cold start defaults to Double.NaN ("Sin medición")
+        viewModel.updatePesoInput("5.40")
+        viewModel.updateLongitudInput("61.5")
+        viewModel.updatePerimetroCefalicoInput("39.5")
 
         // 1. 2m corrected Boy (5.40 kg, 61.5 cm): Normal / Eutrófico across P/E, T/E, P/T, IMC
         val state0 = viewModel.uiState.value
@@ -307,6 +319,8 @@ class ExampleRobolectricTest {
         viewModel.updateFechaNacimiento("15/10/2024")
         viewModel.updateFechaEvaluacion("15/02/2025")
         viewModel.togglePrematurez(true)
+        assertEquals("Pendiente de Edad Corregida", viewModel.uiState.value.proximoControlCorregido.fechaFormateada)
+        viewModel.confirmCurrentEgSemanas()
 
         // F.Nac 15/10/2024, F.Eval 15/02/2025
         // Chronological age = 4m 0d -> 4° Control (4m) is Bimestral (En 60 días) -> 15/04/2025 (15 de Abril, 2025)
@@ -321,6 +335,7 @@ class ExampleRobolectricTest {
         assertEquals("En 30 días", defaultState.proximoControlCorregido.intervaloBadge)
 
         // Newborn (10 days old: 05/02/2025 -> 15/02/2025): Semanal (En 7 días) -> 22/02/2025
+        viewModel.clearEdiRegisteredEg()
         viewModel.togglePrematurez(false)
         viewModel.updateFechaNacimiento("05/02/2025")
         viewModel.updateFechaEvaluacion("15/02/2025")
@@ -375,6 +390,7 @@ class ExampleRobolectricTest {
         viewModel.updateFechaNacimiento("15/10/2024")
         viewModel.updateFechaEvaluacion("15/02/2025")
         viewModel.togglePrematurez(true)
+        viewModel.confirmCurrentEgSemanas()
 
         // 1. Manually mark all 5 hitos of Eje 3 and all 5 neurological items of Eje 4 -> VERDE
         for (i in 0..4) {
@@ -451,6 +467,8 @@ class ExampleRobolectricTest {
         assertFalse(viewModel.uiState.value.frbItems.first { it.id == 1 }.checked)
         viewModel.togglePrematurez(true)
         assertTrue(viewModel.uiState.value.esPrematuro)
+        assertFalse(viewModel.uiState.value.frbItems.first { it.id == 1 }.checked)
+        viewModel.confirmCurrentEgSemanas()
         assertTrue(viewModel.uiState.value.frbItems.first { it.id == 1 }.checked)
         assertTrue(viewModel.uiState.value.frbItems.first { it.id == 1 }.title.contains("32 sem EG"))
 
@@ -594,8 +612,9 @@ class ExampleRobolectricTest {
         assertEquals(24f, stateCrono.evalPE.xMax, 0.01f)
         assertTrue(stateCrono.evalPE.grupoEtarioTitle.contains("0 a 2 años (0-24m)"))
 
-        // 2. Enable prematurity (32w EG -> -56 days): Corrected age becomes 0a 2m 19d
+        // 2. Enable prematurity and confirm 32w EG (-56 days): Corrected age becomes 0a 2m 19d
         viewModel.togglePrematurez(true)
+        viewModel.confirmCurrentEgSemanas()
         val stateCorr = viewModel.uiState.value
         assertTrue(stateCorr.usaEdadCorregida)
         assertEquals(stateCorr.edadCorregidaAMD, stateCorr.edadEfectivaAMD)

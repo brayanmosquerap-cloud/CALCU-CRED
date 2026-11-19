@@ -92,6 +92,7 @@ class EdiPhase4BPdfExporterTest {
         val vm = CredEdiViewModel()
         vm.updateFechaNacimiento("05/01/2025")
         vm.updateFechaEvaluacion("20/02/2025") // 1m 15d -> Grupo 1
+        vm.confirmEdiTermWithoutWeeks()
         vm.updatePerimetroCefalicoInput("38.0")
         vm.updatePesoInput("4.80")
         vm.updateLongitudInput("56.0")
@@ -126,6 +127,7 @@ class EdiPhase4BPdfExporterTest {
         val vm = CredEdiViewModel()
         vm.updateFechaNacimiento("10/11/2024")
         vm.updateFechaEvaluacion("25/02/2025") // 3m 15d -> Grupo 3
+        vm.confirmEdiTermWithoutWeeks()
         vm.updatePerimetroCefalicoInput("40.5")
 
         prepareCleanGroup(vm, 3)
@@ -159,6 +161,7 @@ class EdiPhase4BPdfExporterTest {
         val vm = CredEdiViewModel()
         vm.updateFechaNacimiento("10/12/2023")
         vm.updateFechaEvaluacion("20/02/2025") // 14m 10d -> Grupo 8
+        vm.confirmEdiTermWithoutWeeks()
         vm.updatePerimetroCefalicoInput("46.2")
 
         prepareCleanGroup(vm, 8)
@@ -331,6 +334,7 @@ class EdiPhase4BPdfExporterTest {
         val vm = CredEdiViewModel()
         vm.updateFechaNacimiento("15/05/2023")
         vm.updateFechaEvaluacion("20/02/2025") // 21m 5d -> Grupo 10
+        vm.confirmEdiTermWithoutWeeks()
         vm.updatePerimetroCefalicoInput("47.8")
 
         prepareCleanGroup(vm, 10)
@@ -358,6 +362,7 @@ class EdiPhase4BPdfExporterTest {
         val vm = CredEdiViewModel()
         vm.updateFechaNacimiento("05/01/2025")
         vm.updateFechaEvaluacion("20/02/2025")
+        vm.confirmEdiTermWithoutWeeks()
         prepareCleanGroup(vm, 1)
         completeAllMandatoryAreasAsGreen(vm, 1)
         completeAllEnAsNormal(vm, 1)

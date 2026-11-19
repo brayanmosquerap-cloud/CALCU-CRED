@@ -332,14 +332,124 @@ data class EdiGroupSessionSnapshot(
     val dualEvidenceRecords: Map<String, EdiDualEvidenceRecord> = emptyMap(),
     val itemClinicalNotes: Map<String, String> = emptyMap()
 ) {
+    val answeredCurrentCount: Int
+        get() = currentGroupResponses.values.count { it != EdiItemResponse.UNANSWERED }
+
+    val answeredFallbackCount: Int
+        get() = fallbackGroupResponses.values.count { it != EdiItemResponse.UNANSWERED }
+
+    val answeredFrbCount: Int
+        get() = frbResponses.values.count { it != EdiItemResponse.UNANSWERED }
+
+    val answeredEnCount: Int
+        get() = enResponses.values.count { it != EdiItemResponse.UNANSWERED }
+
+    val dualEvidenceCount: Int
+        get() = dualEvidenceRecords.size
+
+    val clinicalNotesCount: Int
+        get() = itemClinicalNotes.values.count { it.isNotBlank() }
+
+    val totalRecordedElementsCount: Int
+        get() = answeredCurrentCount +
+            answeredFallbackCount +
+            answeredFrbCount +
+            answeredEnCount +
+            dualEvidenceCount +
+            clinicalNotesCount
+
     val hasRecordedClinicalResponses: Boolean
-        get() = currentGroupResponses.values.any { it != EdiItemResponse.UNANSWERED } ||
-            fallbackGroupResponses.values.any { it != EdiItemResponse.UNANSWERED } ||
-            frbResponses.values.any { it != EdiItemResponse.UNANSWERED } ||
-            enResponses.values.any { it != EdiItemResponse.UNANSWERED } ||
+        get() = answeredCurrentCount > 0 ||
+            answeredFallbackCount > 0 ||
+            answeredFrbCount > 0 ||
+            answeredEnCount > 0 ||
             dualEvidenceRecords.isNotEmpty() ||
-            itemClinicalNotes.values.any { it.isNotBlank() }
+            clinicalNotesCount > 0
+
+    val summaryText: String
+        get() = "G$groupNumber: $answeredCurrentCount act., $answeredFallbackCount retro., " +
+            "$answeredFrbCount FRB, $answeredEnCount EN, $dualEvidenceCount dual, $clinicalNotesCount nota(s)"
 }
+
+/**
+ * Estado de validación del contexto clínico disponible al momento de capturar/archivar una sesión.
+ */
+enum class EdiArchivedOriginValidationState(val displayLabel: String) {
+    VERIFIED("VERIFICADO"),
+    UNVERIFIED("NO VERIFICADO")
+}
+
+/**
+ * Contexto clínico de origen preservado de manera inmutable al capturar o archivar una sesión EDI.
+ * Nunca asume que dos niños sean el mismo paciente solo porque coincidan sexo y fecha de nacimiento;
+ * incluye además el identificador de episodio temporal de trabajo ([workEpisodeId]).
+ */
+data class EdiArchivedClinicalContext(
+    val workEpisodeId: String = "EP_1",
+    val originValidationState: EdiArchivedOriginValidationState = EdiArchivedOriginValidationState.UNVERIFIED,
+    val sexoLabel: String = "Niño",
+    val fechaNacimiento: String = "",
+    val fechaEvaluacion: String = "",
+    val esPrematuro: Boolean = false,
+    val egSemanas: Int = 32,
+    val egDias: Int = 0,
+    val ediEgRegistrada: Boolean = false,
+    val ediBirthMaturityCondition: EdiBirthMaturityCondition = EdiBirthMaturityCondition.UNSPECIFIED,
+    val effectiveAgeLabel: String = "EDAD NO VERIFICADA",
+    val gestationalAgeDisplayLabel: String = "EG no registrada",
+    val applicableGroupNumberAtCapture: Int? = null,
+    val validationSummaryAtCapture: String = "NO VERIFICADO"
+) {
+    val isOriginContextVerified: Boolean
+        get() = originValidationState == EdiArchivedOriginValidationState.VERIFIED
+}
+
+/**
+ * Clasificación verificable de compatibilidad entre una sesión archivada y el estado clínico actual.
+ */
+enum class EdiArchivedCompatibilityStatus(val badgeLabel: String) {
+    COMPATIBLE("COMPATIBLE"),
+    INCOMPATIBLE_GROUP_OR_GESTATIONAL_STATE("ADVERTENCIA ETARIA / GESTACIONAL"),
+    INCOMPATIBLE_ORIGIN_UNVERIFIED("NO VERIFICADO"),
+    INCOMPATIBLE_DIFFERENT_PATIENT_OR_EPISODE("OTRO EPISODIO / PACIENTE")
+}
+
+/**
+ * Resultado verificable de compatibilidad clínica de una sesión archivada frente al contexto actual.
+ */
+data class EdiArchivedSessionCompatibility(
+    val status: EdiArchivedCompatibilityStatus,
+    val isFullyCompatibleForDefinitiveEvaluation: Boolean,
+    val summaryLabel: String,
+    val warnings: List<String> = emptyList()
+)
+
+/**
+ * Entrada inmutable dentro del historial canónico de sesiones EDI archivadas en memoria temporal.
+ * Permite conservar múltiples evaluaciones del mismo o de distintos grupos sin sobrescribir ninguna.
+ */
+data class EdiArchivedSessionEntry(
+    val archiveId: String,
+    val sequenceNumber: Int,
+    val groupNumber: Int,
+    val snapshot: EdiGroupSessionSnapshot,
+    val archiveReason: String,
+    val originContext: EdiArchivedClinicalContext,
+    val compatibilityStatusAtArchive: String
+)
+
+/**
+ * Solicitud pendiente de restauración atómica de una sesión archivada.
+ * Exige confirmación explícita antes de sustituir la sesión activa.
+ */
+data class EdiPendingRestoreRequest(
+    val targetArchiveId: String,
+    val targetEntry: EdiArchivedSessionEntry,
+    val activeSessionWillBeArchivedFirst: Boolean,
+    val compatibility: EdiArchivedSessionCompatibility,
+    val warnings: List<String>,
+    val samePatientAndEpisodeConfirmed: Boolean = false
+)
 
 /**
  * Solicitud pendiente de confirmación cuando un cambio de edad, fecha o plantilla cambiaría
@@ -365,15 +475,82 @@ data class EdiPhase1EngineState(
     val activeGroupNumber: Int,
     val activeSession: EdiGroupSessionSnapshot,
     val archivedSessionsByGroup: Map<Int, EdiGroupSessionSnapshot> = emptyMap(),
-    val pendingGroupChangeConfirmation: EdiPendingGroupChangeRequest? = null
-)
+    val pendingGroupChangeConfirmation: EdiPendingGroupChangeRequest? = null,
+    val archivedSessionHistory: List<EdiArchivedSessionEntry> = emptyList(),
+    val nextArchiveSequence: Int = 1,
+    val currentWorkEpisodeId: String = "EP_1",
+    val nextWorkEpisodeSequence: Int = 2,
+    val activeSessionOriginContext: EdiArchivedClinicalContext? = null,
+    val restoredFromArchiveId: String? = null,
+    val restoredSessionOriginContext: EdiArchivedClinicalContext? = null,
+    val previewArchivedSessionId: String? = null,
+    val pendingRestoreRequest: EdiPendingRestoreRequest? = null,
+    val lastRestoreStatusMessage: String? = null
+) {
+    /**
+     * Condición canónica (R1): verdadero cuando existen datos clínicos registrados en la sesión activa
+     * O existen evaluaciones archivadas pertenecientes al episodio temporal actual ([currentWorkEpisodeId]).
+     */
+    val hasAnyDataInCurrentEpisode: Boolean
+        get() = activeSession.hasRecordedClinicalResponses ||
+            archivedSessionHistory.any {
+                it.originContext.workEpisodeId == currentWorkEpisodeId
+            }
+
+    /**
+     * Sesiones archivadas correspondientes exclusivamente al episodio de atención actual (R3).
+     */
+    val currentEpisodeArchivedHistory: List<EdiArchivedSessionEntry>
+        get() = archivedSessionHistory.filter {
+            it.originContext.workEpisodeId == currentWorkEpisodeId
+        }
+
+    /**
+     * Número de evaluaciones archivadas pertenecientes a episodios anteriores resguardadas en RAM.
+     */
+    val previousEpisodesArchivedCount: Int
+        get() = archivedSessionHistory.count {
+            it.originContext.workEpisodeId != currentWorkEpisodeId
+        }
+
+    /**
+     * Entrada archivada actualmente seleccionada para vista previa (solo lectura, restringida al episodio actual).
+     */
+    val previewArchivedEntry: EdiArchivedSessionEntry?
+        get() = archivedSessionHistory.find {
+            it.archiveId == previewArchivedSessionId &&
+                it.originContext.workEpisodeId == currentWorkEpisodeId
+        }
+
+    /**
+     * Obtiene todas las sesiones archivadas para un grupo específico en orden cronológico de archivado.
+     */
+    fun getArchivedEntriesForGroup(groupNumber: Int): List<EdiArchivedSessionEntry> =
+        archivedSessionHistory.filter { it.groupNumber == groupNumber }
+
+    /**
+     * Obtiene las sesiones archivadas del episodio actual para un grupo específico.
+     */
+    fun getCurrentEpisodeArchivedEntriesForGroup(groupNumber: Int): List<EdiArchivedSessionEntry> =
+        currentEpisodeArchivedHistory.filter { it.groupNumber == groupNumber }
+}
 
 /**
- * Base del motor clínico independiente (Fase 1) para gestionar estados de respuesta,
- * modalidades duales, materiales faltantes y transición segura entre grupos con conservación
- * y confirmación explícita antes de descartar registros.
+ * Base del motor clínico independiente (Fase 1 + MEDIO-02) para gestionar estados de respuesta,
+ * modalidades duales, materiales faltantes, historial canónico de sesiones archivadas con ID único
+ * y restauración atómica protegida sin pérdida ni mezcla de evaluaciones.
  */
 object EdiPhase1SessionManager {
+
+    private fun deriveArchivedSessionsByGroup(
+        history: List<EdiArchivedSessionEntry>
+    ): Map<Int, EdiGroupSessionSnapshot> {
+        val map = linkedMapOf<Int, EdiGroupSessionSnapshot>()
+        history.forEach { entry ->
+            map[entry.groupNumber] = entry.snapshot
+        }
+        return map
+    }
 
     fun createInitialState(groupNumber: Int): EdiPhase1EngineState {
         val validGroup = groupNumber.coerceIn(1, 15)
@@ -510,6 +687,9 @@ object EdiPhase1SessionManager {
             state.copy(
                 activeGroupNumber = safeTarget,
                 activeSession = createEmptySessionForGroup(safeTarget),
+                activeSessionOriginContext = null,
+                restoredFromArchiveId = null,
+                restoredSessionOriginContext = null,
                 pendingGroupChangeConfirmation = null
             )
         } else {
@@ -525,30 +705,83 @@ object EdiPhase1SessionManager {
     }
 
     /**
+     * Construye una nueva entrada archivada única e inmutable para [snapshot].
+     */
+    private fun createArchivedEntry(
+        sequenceNumber: Int,
+        snapshot: EdiGroupSessionSnapshot,
+        reason: String,
+        originContext: EdiArchivedClinicalContext
+    ): EdiArchivedSessionEntry {
+        val archiveId = String.format(
+            java.util.Locale.US,
+            "ARCH_%03d_G%d",
+            sequenceNumber,
+            snapshot.groupNumber
+        )
+        return EdiArchivedSessionEntry(
+            archiveId = archiveId,
+            sequenceNumber = sequenceNumber,
+            groupNumber = snapshot.groupNumber,
+            snapshot = snapshot,
+            archiveReason = reason,
+            originContext = originContext,
+            compatibilityStatusAtArchive = originContext.validationSummaryAtCapture
+        )
+    }
+
+    /**
      * Resuelve de forma explícita y auditable una solicitud pendiente de cambio de grupo.
-     * En ningún caso se reutilizan las respuestas del grupo anterior dentro del nuevo grupo.
+     * - En ningún caso se reutilizan las respuestas del grupo anterior dentro del nuevo grupo.
+     * - Al archivar, agrega una entrada única a [archivedSessionHistory] sin sobrescribir sesiones
+     *   anteriores del mismo grupo, y proyecta [archivedSessionsByGroup] desde el historial canónico.
+     * - Al descartar ([EdiGroupChangeResolutionAction.DISCARD_PREVIOUS_CONFIRMED_AND_SWITCH_TO_CLEAN_TARGET]),
+     *   descarta únicamente la sesión activa y NUNCA elimina entradas históricas ya archivadas.
      */
     fun confirmPendingGroupChange(
         state: EdiPhase1EngineState,
-        action: EdiGroupChangeResolutionAction
+        action: EdiGroupChangeResolutionAction,
+        originContext: EdiArchivedClinicalContext? = null
     ): EdiPhase1EngineState {
         val pending = state.pendingGroupChangeConfirmation ?: return state
         return when (action) {
             EdiGroupChangeResolutionAction.ARCHIVE_PREVIOUS_AND_SWITCH_TO_CLEAN_TARGET -> {
+                val resolvedContext = originContext
+                    ?: state.activeSessionOriginContext
+                    ?: EdiArchivedClinicalContext(workEpisodeId = state.currentWorkEpisodeId)
+                val newEntry = createArchivedEntry(
+                    sequenceNumber = state.nextArchiveSequence,
+                    snapshot = pending.preservedSnapshotOfPreviousGroup,
+                    reason = pending.reason,
+                    originContext = resolvedContext
+                )
+                val updatedHistory = state.archivedSessionHistory + newEntry
                 state.copy(
                     activeGroupNumber = pending.targetGroupNumber,
                     activeSession = createEmptySessionForGroup(pending.targetGroupNumber),
-                    archivedSessionsByGroup = state.archivedSessionsByGroup +
-                        (pending.previousGroupNumber to pending.preservedSnapshotOfPreviousGroup),
+                    archivedSessionHistory = updatedHistory,
+                    archivedSessionsByGroup = deriveArchivedSessionsByGroup(updatedHistory),
+                    nextArchiveSequence = state.nextArchiveSequence + 1,
+                    activeSessionOriginContext = null,
+                    restoredFromArchiveId = null,
+                    restoredSessionOriginContext = null,
                     pendingGroupChangeConfirmation = null
                 )
             }
 
             EdiGroupChangeResolutionAction.DISCARD_PREVIOUS_CONFIRMED_AND_SWITCH_TO_CLEAN_TARGET -> {
+                val preservedMap = if (state.archivedSessionHistory.isNotEmpty()) {
+                    deriveArchivedSessionsByGroup(state.archivedSessionHistory)
+                } else {
+                    state.archivedSessionsByGroup
+                }
                 state.copy(
                     activeGroupNumber = pending.targetGroupNumber,
                     activeSession = createEmptySessionForGroup(pending.targetGroupNumber),
-                    archivedSessionsByGroup = state.archivedSessionsByGroup - pending.previousGroupNumber,
+                    archivedSessionsByGroup = preservedMap,
+                    activeSessionOriginContext = null,
+                    restoredFromArchiveId = null,
+                    restoredSessionOriginContext = null,
                     pendingGroupChangeConfirmation = null
                 )
             }
@@ -557,6 +790,252 @@ object EdiPhase1SessionManager {
                 state.copy(pendingGroupChangeConfirmation = null)
             }
         }
+    }
+
+    /**
+     * Abre la vista previa en modo de solo lectura para una sesión archivada del episodio actual.
+     * No modifica [EdiPhase1EngineState.activeSession] ni [EdiPhase1EngineState.activeGroupNumber].
+     * Por privacidad (R3), rechaza abrir sesiones de otros episodios.
+     */
+    fun openArchivedSessionPreview(
+        state: EdiPhase1EngineState,
+        archiveId: String
+    ): EdiPhase1EngineState {
+        val targetEntry = state.archivedSessionHistory.find { it.archiveId == archiveId }
+            ?: return state
+        if (targetEntry.originContext.workEpisodeId != state.currentWorkEpisodeId) {
+            return state.copy(
+                previewArchivedSessionId = null,
+                lastRestoreStatusMessage = "Privacidad por episodio: la evaluación $archiveId pertenece al episodio ${targetEntry.originContext.workEpisodeId} y no puede abrirse en el episodio activo (${state.currentWorkEpisodeId})."
+            )
+        }
+        return state.copy(previewArchivedSessionId = archiveId)
+    }
+
+    /**
+     * Cierra la vista previa de sesión archivada sin alterar la sesión activa.
+     */
+    fun closeArchivedSessionPreview(
+        state: EdiPhase1EngineState
+    ): EdiPhase1EngineState = state.copy(previewArchivedSessionId = null)
+
+    /**
+     * Inicia una solicitud de restauración protegida para [archiveId].
+     * - R3: Si la entrada pertenece a otro episodio ([EdiArchivedClinicalContext.workEpisodeId] != [EdiPhase1EngineState.currentWorkEpisodeId]),
+     *   rechaza inmediatamente la operación sin habilitar restauración ni mutar la sesión activa.
+     * - R2: Inicializa [EdiPendingRestoreRequest.samePatientAndEpisodeConfirmed] en `false` para exigir
+     *   confirmación deliberada de continuidad del mismo paciente y episodio antes de restaurar.
+     */
+    fun requestRestoreArchivedSession(
+        state: EdiPhase1EngineState,
+        archiveId: String,
+        compatibility: EdiArchivedSessionCompatibility
+    ): EdiPhase1EngineState {
+        val targetEntry = state.archivedSessionHistory.find { it.archiveId == archiveId }
+            ?: return state.copy(
+                pendingRestoreRequest = null,
+                lastRestoreStatusMessage = "No se encontró la sesión archivada solicitada ($archiveId)."
+            )
+        if (
+            targetEntry.originContext.workEpisodeId != state.currentWorkEpisodeId ||
+            compatibility.status == EdiArchivedCompatibilityStatus.INCOMPATIBLE_DIFFERENT_PATIENT_OR_EPISODE
+        ) {
+            return state.copy(
+                pendingRestoreRequest = null,
+                lastRestoreStatusMessage = "Restauración rechazada: la evaluación ${targetEntry.archiveId} pertenece a otro episodio (${targetEntry.originContext.workEpisodeId}) y está prohibido restaurarla en el episodio activo (${state.currentWorkEpisodeId})."
+            )
+        }
+        val activeWillBeArchived = state.activeSession.hasRecordedClinicalResponses
+        val allWarnings = buildList {
+            if (activeWillBeArchived) {
+                add(
+                    "La evaluación activa actual (G${state.activeGroupNumber}) contiene respuestas clínicas y será archivada automáticamente como una nueva entrada única antes de restaurar ${targetEntry.archiveId}."
+                )
+            }
+            addAll(compatibility.warnings)
+        }
+        return state.copy(
+            pendingRestoreRequest = EdiPendingRestoreRequest(
+                targetArchiveId = targetEntry.archiveId,
+                targetEntry = targetEntry,
+                activeSessionWillBeArchivedFirst = activeWillBeArchived,
+                compatibility = compatibility,
+                warnings = allWarnings,
+                samePatientAndEpisodeConfirmed = false
+            )
+        )
+    }
+
+    /**
+     * Registra la confirmación deliberada del profesional sobre la continuidad del mismo paciente
+     * y episodio de atención («Confirmo que esta evaluación corresponde al mismo paciente y episodio de atención»).
+     */
+    fun setPendingRestoreSamePatientConfirmed(
+        state: EdiPhase1EngineState,
+        confirmed: Boolean
+    ): EdiPhase1EngineState {
+        val pending = state.pendingRestoreRequest ?: return state
+        if (pending.targetEntry.originContext.workEpisodeId != state.currentWorkEpisodeId) {
+            return state.copy(
+                pendingRestoreRequest = null,
+                lastRestoreStatusMessage = "Restauración rechazada: la evaluación ${pending.targetArchiveId} pertenece a otro episodio (${pending.targetEntry.originContext.workEpisodeId})."
+            )
+        }
+        return state.copy(
+            pendingRestoreRequest = pending.copy(samePatientAndEpisodeConfirmed = confirmed)
+        )
+    }
+
+    /**
+     * Cancela una solicitud pendiente de restauración conservando intacta la sesión activa.
+     */
+    fun cancelRestoreArchivedSession(
+        state: EdiPhase1EngineState
+    ): EdiPhase1EngineState = state.copy(pendingRestoreRequest = null)
+
+    /**
+     * Ejecuta la restauración atómica protegida tras confirmación explícita del profesional:
+     * 1. Verifica que la entrada objetivo exista en el historial canónico.
+     * 2. R3: Rechaza cualquier intento de restaurar una evaluación cuyo `workEpisodeId` no coincida
+     *    con `currentWorkEpisodeId`, conservando intacta la sesión activa y el archivo original.
+     * 3. R2: Exige confirmación explícita de continuidad del paciente (`samePatientContinuityConfirmed`
+     *    o `pending.samePatientAndEpisodeConfirmed == true`); sin ella, rechaza la restauración.
+     * 4. Si la evaluación activa contiene respuestas clínicas, la archiva primero como nueva entrada única.
+     * 5. Restaura íntegramente el snapshot elegido (6 mapas completos) sin mezclar respuestas.
+     * 6. Conserva la trazabilidad inmutable ([EdiPhase1EngineState.restoredFromArchiveId] y [EdiPhase1EngineState.restoredSessionOriginContext]).
+     */
+    fun confirmRestoreArchivedSession(
+        state: EdiPhase1EngineState,
+        activeOriginContextForAutoArchive: EdiArchivedClinicalContext? = null,
+        samePatientContinuityConfirmed: Boolean = state.pendingRestoreRequest?.samePatientAndEpisodeConfirmed == true
+    ): EdiPhase1EngineState {
+        val pending = state.pendingRestoreRequest ?: return state.copy(
+            lastRestoreStatusMessage = "Restauración rechazada: no existe una solicitud de restauración pendiente."
+        )
+        val targetEntry = state.archivedSessionHistory.find { it.archiveId == pending.targetArchiveId }
+            ?: return state.copy(
+                pendingRestoreRequest = null,
+                lastRestoreStatusMessage = "Error: la sesión archivada ${pending.targetArchiveId} no existe; se conservó intacta la sesión activa."
+            )
+
+        if (
+            targetEntry.originContext.workEpisodeId != state.currentWorkEpisodeId ||
+            pending.targetEntry.originContext.workEpisodeId != state.currentWorkEpisodeId ||
+            pending.compatibility.status == EdiArchivedCompatibilityStatus.INCOMPATIBLE_DIFFERENT_PATIENT_OR_EPISODE
+        ) {
+            return state.copy(
+                pendingRestoreRequest = null,
+                lastRestoreStatusMessage = "Restauración rechazada: la evaluación ${targetEntry.archiveId} pertenece al episodio ${targetEntry.originContext.workEpisodeId} y está prohibido restaurarla en el episodio activo (${state.currentWorkEpisodeId})."
+            )
+        }
+
+        val isContinuityConfirmed = samePatientContinuityConfirmed || pending.samePatientAndEpisodeConfirmed
+        if (!isContinuityConfirmed) {
+            return state.copy(
+                lastRestoreStatusMessage = "Restauración rechazada: debe confirmar explícitamente «Confirmo que esta evaluación corresponde al mismo paciente y episodio de atención» antes de restaurar ${targetEntry.archiveId}."
+            )
+        }
+
+        var workingHistory = state.archivedSessionHistory
+        var workingSeq = state.nextArchiveSequence
+
+        if (state.activeSession.hasRecordedClinicalResponses) {
+            val activeOrigin = activeOriginContextForAutoArchive
+                ?: state.activeSessionOriginContext
+                ?: EdiArchivedClinicalContext(workEpisodeId = state.currentWorkEpisodeId)
+            val preRestoreArchiveEntry = createArchivedEntry(
+                sequenceNumber = workingSeq,
+                snapshot = state.activeSession,
+                reason = "Respaldo automático previo a restaurar ${targetEntry.archiveId} (G${targetEntry.groupNumber})",
+                originContext = activeOrigin
+            )
+            val candidateHistory = workingHistory + preRestoreArchiveEntry
+            val verifiedSaved = candidateHistory.any {
+                it.archiveId == preRestoreArchiveEntry.archiveId &&
+                    it.snapshot == state.activeSession
+            }
+            if (!verifiedSaved) {
+                return state.copy(
+                    pendingRestoreRequest = null,
+                    lastRestoreStatusMessage = "No se pudo verificar el archivado previo de la sesión activa; se abortó la restauración sin pérdida de datos."
+                )
+            }
+            workingHistory = candidateHistory
+            workingSeq += 1
+        }
+
+        val restoredSnapshot = targetEntry.snapshot.copy(
+            currentGroupResponses = LinkedHashMap(targetEntry.snapshot.currentGroupResponses),
+            fallbackGroupResponses = LinkedHashMap(targetEntry.snapshot.fallbackGroupResponses),
+            frbResponses = LinkedHashMap(targetEntry.snapshot.frbResponses),
+            enResponses = LinkedHashMap(targetEntry.snapshot.enResponses),
+            dualEvidenceRecords = LinkedHashMap(targetEntry.snapshot.dualEvidenceRecords),
+            itemClinicalNotes = LinkedHashMap(targetEntry.snapshot.itemClinicalNotes)
+        )
+
+        return state.copy(
+            activeGroupNumber = targetEntry.groupNumber,
+            activeSession = restoredSnapshot,
+            archivedSessionHistory = workingHistory,
+            archivedSessionsByGroup = deriveArchivedSessionsByGroup(workingHistory),
+            nextArchiveSequence = workingSeq,
+            activeSessionOriginContext = targetEntry.originContext,
+            restoredFromArchiveId = targetEntry.archiveId,
+            restoredSessionOriginContext = targetEntry.originContext,
+            previewArchivedSessionId = null,
+            pendingRestoreRequest = null,
+            pendingGroupChangeConfirmation = null,
+            lastRestoreStatusMessage = "Sesión ${targetEntry.archiveId} (G${targetEntry.groupNumber}) restaurada íntegramente tras confirmar continuidad del mismo paciente y episodio (${state.currentWorkEpisodeId})."
+        )
+    }
+
+    /**
+     * Inicia un nuevo episodio temporal de evaluación (p. ej. al iniciar la evaluación de otro paciente
+     * o cuando cambian datos esenciales de identificación existiendo datos en el episodio actual).
+     * Si la sesión activa tiene respuestas registradas, la archiva primero bajo su contexto de origen
+     * antes de abrir una sesión limpia en el nuevo episodio temporal.
+     */
+    fun startNewWorkEpisode(
+        state: EdiPhase1EngineState,
+        targetGroupNumber: Int = state.activeGroupNumber,
+        reason: String = "Inicio de nuevo episodio temporal de evaluación",
+        previousOriginContext: EdiArchivedClinicalContext? = null
+    ): EdiPhase1EngineState {
+        val safeTarget = targetGroupNumber.coerceIn(1, 15)
+        var workingHistory = state.archivedSessionHistory
+        var workingSeq = state.nextArchiveSequence
+
+        if (state.activeSession.hasRecordedClinicalResponses) {
+            val origin = previousOriginContext
+                ?: state.activeSessionOriginContext
+                ?: EdiArchivedClinicalContext(workEpisodeId = state.currentWorkEpisodeId)
+            val archivedEntry = createArchivedEntry(
+                sequenceNumber = workingSeq,
+                snapshot = state.activeSession,
+                reason = reason,
+                originContext = origin
+            )
+            workingHistory = workingHistory + archivedEntry
+            workingSeq += 1
+        }
+
+        val newEpisodeId = "EP_${state.nextWorkEpisodeSequence}"
+        return state.copy(
+            activeGroupNumber = safeTarget,
+            activeSession = createEmptySessionForGroup(safeTarget),
+            archivedSessionHistory = workingHistory,
+            archivedSessionsByGroup = deriveArchivedSessionsByGroup(workingHistory),
+            nextArchiveSequence = workingSeq,
+            currentWorkEpisodeId = newEpisodeId,
+            nextWorkEpisodeSequence = state.nextWorkEpisodeSequence + 1,
+            activeSessionOriginContext = null,
+            restoredFromArchiveId = null,
+            restoredSessionOriginContext = null,
+            previewArchivedSessionId = null,
+            pendingRestoreRequest = null,
+            pendingGroupChangeConfirmation = null,
+            lastRestoreStatusMessage = "Nuevo episodio temporal iniciado ($newEpisodeId): $reason"
+        )
     }
 }
 
@@ -689,7 +1168,7 @@ object EdiOfficialCatalog {
             hasObservationAsterisks = true,
             formatQuestionText = "**2. ¿Presenta alteración o asimetría en la movilidad de ojos o expresión facial? (Observe)",
             consultationQuestionText = "**EN 1.2. ¿Presenta alteración o asimetría en la movilidad de ojos o expresión facial?",
-            clinicalInstruction = "Coloque al niño acostado o sentado sobre la mesa de exploración. Sujete con la mano derecha el juguete llamativo no sonoro a 20 cm frente al niño y después de obtener la fijación visual hacia el juguete, desplácelo lentamente en el eje horizontal, vertical y en ambas diagonales. Analice la presencia o ausencia de mirada binocular en posición primaria (ojos viendo al frente), incapacidad de la movilidad de uno o ambos ojos o alguna alteración de la mirada primaria conjugada. Después con el niño en la misma posición, observe la asimetría en la expresión facial.",
+            clinicalInstruction = "Coloque al niño acostado o sentado sobre la mesa de exploración. Sujete con la mano derecha el juguete llamativo no sonoro a 20 cm frente al niño y después de obtener la fijación visual hacia el juguete, desplácelo lentamente en el eje horizontal, vertical y en ambas diagonales. Analice la presencia o ausencia de mirada binocular en posición primaria (ojos viendo al frente), incapacidad de la movilidad de uno o ambos ojos o alguna alteración de la mirada primaria conjugada. Después con el niño en la misma posición, observe la asimetría en la expresión facial. En caso de estar presente, puede ser más visible cuando el niño llora, ya que se observa que el lado afectado permanece fijo, la boca se ve desviada al lado opuesto (sano) y el párpado queda entreabierto mientras se cierra en lado sano.",
             modality = EdiClinicalModality.DIRECT_OBSERVATION,
             generalHeaderMaterials = listOf("Juguete llamativo no sonoro"),
             protocolRequiredMaterials = listOf("Juguete llamativo no sonoro"),
@@ -1230,8 +1709,7 @@ object EdiOfficialCatalog {
                     4, EdiDevArea.MG, 2, true,
                     "**2. Cuando su bebé está acostado boca arriba, ¿se voltea hacia los lados? (Observe)",
                     "**MG 4.2. Cuando el bebé está acostado boca arriba, ¿se voltea hacia los lados?",
-                    "Coloque al bebé en decúbito dorsal (boca arriba) y llame su atención hablándole, cantándole o mostrándole algún juguete atractivo para que logre ponerse de costado, dándose vuelta hacia el lado del estímulo. Repetición del ítem: hasta 2 veces más de cada lado.",
-                    protocolMats = listOf("Juguete atractivo")
+                    "Coloque al bebé en decúbito dorsal (boca arriba) y llame su atención hablándole, cantándole o mostrándole algún juguete atractivo para que logre ponerse de costado, dándose vuelta hacia el lado del estímulo. Repetición del ítem: hasta 2 veces más de cada lado."
                 )
             ),
             EdiDevArea.MF to listOf(
@@ -1277,7 +1755,7 @@ object EdiOfficialCatalog {
                     4, EdiDevArea.SO, 2, false,
                     "2. ¿Le gusta jugar con otras personas y llora cuando dejan de jugar con él?",
                     "SO 4.2. ¿Le gusta jugar con otras personas y llora cuando dejan de jugar con él?",
-                    "Pregunte a la madre, padre o cuidador principal: ¿cómo manifiesta que quiere jugar con los adultos?, ¿llora, grita, jala la ropa o toca al adulto cuando quiere que le presten atención y jueguen con él?, ¿qué hace el niño cuando el adulto deja de jugar con él e intenta alejarse? Defina la frecuencia e intensidad de la conducta en comparación con otros niños de su misma edad."
+                    "Pregunte a la madre, padre o cuidador principal: ¿cómo manifiesta que quiere jugar con los adultos?, ¿llora, grita, jala la ropa o toca al adulto cuando quiere que le presten atención y jueguen con él?, ¿qué hace el niño cuando el adulto deja de jugar con él e intenta alejarse? ¿Recurre el niño a estrategias para impedir que el adulto se aleje? Defina la frecuencia e intensidad de la conducta en comparación con otros niños de su misma edad."
                 )
             ),
             EdiDevArea.CO to emptyList()
@@ -1436,8 +1914,7 @@ object EdiOfficialCatalog {
                 5, 5, true,
                 "**5. Cuando está boca arriba, ¿se le dificulta girar su cuerpo hacia los lados? (Observe)",
                 "**ALE 5.5. Cuando está boca arriba, ¿se le dificulta girar su cuerpo hacia los lados?",
-                "Coloque al niño en decúbito dorsal (boca arriba) llamando su atención hablándole, cantándole o mostrándole algún juguete atractivo para que logre ponerse de costado, dándose vuelta hacia el lado del estímulo. Repetición del ítem: hasta 2 veces más de cada lado.",
-                protocolMats = listOf("Juguete atractivo")
+                "Coloque al niño en decúbito dorsal (boca arriba) llamando su atención hablándole, cantándole o mostrándole algún juguete atractivo para que logre ponerse de costado, dándose vuelta hacia el lado del estímulo. Repetición del ítem: hasta 2 veces más de cada lado."
             ),
             aleItem(
                 5, 6, false,
@@ -1742,7 +2219,7 @@ object EdiOfficialCatalog {
                     "**MG 8.2. Cuando su niño está sentado, ¿puede pararse solo?",
                     "Siente al niño en una silla pequeña o en un tapete y motívelo para que se levante. Observe si logra ponerse de pie desde la posición de sentado apoyando ligeramente las manos en el suelo.",
                     headerMats = listOf("Tapete y sonaja o juguete llamativo"),
-                    protocolMats = listOf("Tapete o silla pequeña y juguete llamativo")
+                    protocolMats = listOf("Tapete o silla pequeña")
                 ),
                 devItem(
                     8, EdiDevArea.MG, 3, true,
@@ -1815,8 +2292,7 @@ object EdiOfficialCatalog {
                     "**3. ¿Obedece órdenes sencillas como: \"ven\", \"dámelo\", \"trae tu pelota\", etc.? (Observe)",
                     "**SO 8.3. ¿Obedece órdenes sencillas como: \"ven\", \"dámelo\", \"trae tu pelota\", etc.?",
                     "Haga contacto visual con el niño y dele una orden sencilla como \"ven\" o \"trae la pelota\". El objetivo de este ítem es evaluar la respuesta social al adulto, si responde a sus pedidos y llamados, si mira al adulto cuando se le llama por su nombre, si intenta cooperar y satisfacer los pedidos que le hace el adulto.",
-                    headerMats = listOf("Pelota o juguete llamativo"),
-                    protocolMats = listOf("Pelota o juguete llamativo")
+                    headerMats = listOf("Pelota o juguete llamativo")
                 )
             ),
             EdiDevArea.CO to emptyList()
@@ -2235,7 +2711,7 @@ object EdiOfficialCatalog {
                     11, EdiDevArea.LE, 2, false,
                     "2. ¿Utiliza palabras como \"yo\", \"mío\", \"él\", \"ella\", \"tú\"?",
                     "LE 11.2. ¿Utiliza palabras como \"yo\", \"mío\", \"él\", \"ella\", \"tú\"?",
-                    "Pregunte a la madre, padre o cuidador principal si utiliza de manera espontánea y apropiada pronombres personales como: \"yo\" (cuando se refiere a sí mismo), \"tú\" (cuando se dirige a otro), \"él/ella\" (cuando habla de una tercera persona) y el pronombre posesivo \"mío\" (cuando se refiere a algo que le pertenece). Es suficiente con que utilice una de estas palabras correctamente."
+                    "Pregunte a la madre, padre o cuidador principal si utiliza de manera espontánea y apropiada pronombres personales como: \"yo\" (cuando se refiere a sí mismo), \"tú\" (cuando se dirige a otro), \"él/ella\" (cuando habla de una tercera persona) y el pronombre posesivo \"mío\" (cuando se refiere a algo que le pertenece). Defina la frecuencia e intensidad de la conducta en comparación con otros niños de su misma edad. Asegúrese que no se refiera a sí mismo en tercera persona (hablar de sí mismo como si fuera otra persona). Es suficiente con que utilice una de estas palabras correctamente."
                 ),
                 devItem(
                     11, EdiDevArea.LE, 3, false,

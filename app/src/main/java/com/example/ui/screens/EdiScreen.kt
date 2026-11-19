@@ -12,10 +12,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +27,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -35,6 +39,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.Assessment
+import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.Block
 import androidx.compose.material.icons.outlined.CalendarToday
 import androidx.compose.material.icons.outlined.Checklist
@@ -43,7 +48,9 @@ import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.MedicalInformation
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.PictureAsPdf
+import androidx.compose.material.icons.outlined.Pin
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.ReportProblem
 import androidx.compose.material.icons.outlined.Schedule
@@ -53,6 +60,7 @@ import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -74,17 +82,29 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.model.AutosaveUiIndicatorState
+import com.example.model.NewEvaluationCreationResult
 import com.example.model.CredEdiUiState
+import com.example.model.EdiArchivedCompatibilityStatus
+import com.example.model.EdiArchivedSessionEntry
 import com.example.model.EdiAreaColorResult
 import com.example.model.EdiAreaEvaluationResult
 import com.example.model.EdiAxis
+import com.example.model.EdiBirthMaturityCondition
 import com.example.model.EdiCatalogItem
 import com.example.model.EdiClinicalModality
 import com.example.model.EdiCorrectedAgeComparison
@@ -100,6 +120,9 @@ import com.example.model.EdiInternalView
 import com.example.model.EdiItemResponse
 import com.example.model.EdiOfficialCatalog
 import com.example.model.EdiPendingGroupChangeRequest
+import com.example.model.EdiPendingRestoreRequest
+import com.example.model.EvaluationPersistenceStatus
+import com.example.persistence.SavedEvaluationSummary
 import com.example.ui.components.ClinicalSectionCard
 import com.example.ui.components.PillBadge
 import com.example.util.EdiPdfExporter
@@ -155,8 +178,53 @@ fun EdiScreen(
     onRecordFallbackResponse: (String, EdiItemResponse) -> Unit,
     onRecordFallbackDualEvidence: (String, Boolean?, Boolean?, Boolean?, String) -> Unit,
     onUpdateItemClinicalNote: (String, String) -> Unit,
+    onConfirmTermWithoutWeeks: () -> Unit = {},
+    onClearRegisteredEg: () -> Unit = {},
+    onConfirmContradictionKeepRegisteredEg: () -> Unit = {},
+    onConfirmContradictionAsPretermWithoutWeeks: () -> Unit = {},
+    onUpdateEgSemanas: (Int) -> Unit = {},
+    onOpenArchivedPreview: (String) -> Unit = {},
+    onCloseArchivedPreview: () -> Unit = {},
+    onRequestRestoreArchived: (String) -> Unit = {},
+    onSetRestoreSamePatientContinuityConfirmed: (Boolean) -> Unit = {},
+    onCancelRestoreArchived: () -> Unit = {},
+    onConfirmRestoreArchived: () -> Unit = {},
+    onStartNewEvaluationEpisode: () -> Unit = {},
+    onCorrectSamePatientFechaNacimiento: (String, String) -> Unit = { _, _ -> },
+    onSaveEvaluationManually: () -> Unit = {},
+    onToggleEvaluationHistory: () -> Unit = {},
+    onStartNewPatientEvaluation: () -> Unit = {},
+    onCreateNewPatientEvaluation: (String, String, Boolean) -> NewEvaluationCreationResult = { _, _, _ ->
+        NewEvaluationCreationResult.Success("")
+    },
+    onContinueEvaluationFromHistory: (String) -> Unit = {},
+    onViewCompletedEvaluationFromHistory: (String) -> Unit = {},
+    onEnableEditingForViewedCompletedEvaluation: () -> Unit = {},
+    onRequestDeleteEvaluationFromHistory: (String) -> Unit = {},
+    onCancelDeleteEvaluationFromHistory: () -> Unit = {},
+    onConfirmDeleteEvaluationFromHistory: () -> Unit = {},
+    onUpdatePatientIdentification: (String, String, String) -> Unit = { _, _, _ -> },
+    onPatientFullNameChange: ((String) -> Unit)? = null,
+    onPatientDniChange: ((String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
+    val effectiveFullNameChange: (String) -> Unit = onPatientFullNameChange ?: { newFullName ->
+        onUpdatePatientIdentification(
+            newFullName.replace("\r", " ").replace("\n", " "),
+            state.patientIdentification.clinicalRecordCode,
+            state.patientIdentification.generalClinicalNote
+        )
+    }
+    val effectiveDniChange: (String) -> Unit = onPatientDniChange ?: { rawDni ->
+        onUpdatePatientIdentification(
+            state.patientIdentification.patientIdentifierOrAlias,
+            rawDni.filter { it.isDigit() }.take(8),
+            state.patientIdentification.generalClinicalNote
+        )
+    }
+    var showCorrectBirthDateDialog by remember { mutableStateOf(false) }
+    var showNewPatientEvaluationDialog by remember { mutableStateOf(false) }
+
     if (state.ediInternalView != EdiInternalView.SUMMARY_5_AXES) {
         BackHandler { onNavigateBack() }
     }
@@ -169,6 +237,69 @@ fun EdiScreen(
         )
     }
 
+    val previewEntry = state.ediEngineState.previewArchivedEntry
+    if (previewEntry != null) {
+        EdiArchivedSessionPreviewDialog(
+            state = state,
+            entry = previewEntry,
+            onClose = onCloseArchivedPreview,
+            onRequestRestore = {
+                onCloseArchivedPreview()
+                onRequestRestoreArchived(previewEntry.archiveId)
+            }
+        )
+    }
+
+    val pendingRestore = state.ediEngineState.pendingRestoreRequest
+    if (pendingRestore != null) {
+        EdiRestoreArchivedConfirmationDialog(
+            request = pendingRestore,
+            onToggleSamePatientContinuity = onSetRestoreSamePatientContinuityConfirmed,
+            onConfirm = onConfirmRestoreArchived,
+            onStartNewEpisodeForOtherPatient = {
+                onCancelRestoreArchived()
+                onStartNewEvaluationEpisode()
+            },
+            onCancel = onCancelRestoreArchived
+        )
+    }
+
+    val pendingDeleteSummary = state.pendingDeleteEvaluationSummary
+    if (pendingDeleteSummary != null) {
+        EdiHistoryDeleteConfirmationDialog(
+            summary = pendingDeleteSummary,
+            onCancel = onCancelDeleteEvaluationFromHistory,
+            onConfirm = onConfirmDeleteEvaluationFromHistory
+        )
+    }
+
+    if (showCorrectBirthDateDialog) {
+        EdiCorrectSamePatientBirthDateDialog(
+            state = state,
+            onDismiss = { showCorrectBirthDateDialog = false },
+            onConfirmCorrection = { newDate, reason ->
+                onCorrectSamePatientFechaNacimiento(newDate, reason)
+                showCorrectBirthDateDialog = false
+            },
+            onRejectedCorrectionAttempt = { newDate, reason ->
+                onCorrectSamePatientFechaNacimiento(newDate, reason)
+            }
+        )
+    }
+
+    if (showNewPatientEvaluationDialog) {
+        EdiNewPatientIdentificationDialog(
+            onDismiss = { showNewPatientEvaluationDialog = false },
+            onCreateEvaluation = { fullName, dni, allowPendingId ->
+                val result = onCreateNewPatientEvaluation(fullName, dni, allowPendingId)
+                if (result is NewEvaluationCreationResult.Success) {
+                    showNewPatientEvaluationDialog = false
+                }
+                result
+            }
+        )
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -178,7 +309,24 @@ fun EdiScreen(
             EdiInternalView.SUMMARY_5_AXES -> EdiSummary5AxesView(
                 state = state,
                 onNavigateView = onNavigateView,
-                onOpenAxisQuestionnaire = onOpenAxisQuestionnaire
+                onOpenAxisQuestionnaire = onOpenAxisQuestionnaire,
+                onConfirmTermWithoutWeeks = onConfirmTermWithoutWeeks,
+                onTogglePrematurez = onTogglePrematurez,
+                onUseAgeSuggestedGroup = onUseAgeSuggestedGroup,
+                onOpenArchivedPreview = onOpenArchivedPreview,
+                onRequestRestoreArchived = onRequestRestoreArchived,
+                onStartNewEvaluationEpisode = onStartNewEvaluationEpisode,
+                onOpenCorrectBirthDateDialog = { showCorrectBirthDateDialog = true },
+                onSaveEvaluationManually = onSaveEvaluationManually,
+                onToggleEvaluationHistory = onToggleEvaluationHistory,
+                onStartNewPatientEvaluation = { showNewPatientEvaluationDialog = true },
+                onContinueEvaluationFromHistory = onContinueEvaluationFromHistory,
+                onViewCompletedEvaluationFromHistory = onViewCompletedEvaluationFromHistory,
+                onEnableEditingForViewedCompletedEvaluation = onEnableEditingForViewedCompletedEvaluation,
+                onRequestDeleteEvaluationFromHistory = onRequestDeleteEvaluationFromHistory,
+                onUpdatePatientIdentification = onUpdatePatientIdentification,
+                onPatientFullNameChange = effectiveFullNameChange,
+                onPatientDniChange = effectiveDniChange
             )
 
             EdiInternalView.GROUP_BANK_15 -> EdiGroupBank15View(
@@ -194,7 +342,24 @@ fun EdiScreen(
                 onAdjustEgSemanas = onAdjustEgSemanas,
                 onAdjustEgDias = onAdjustEgDias,
                 onUpdateEdiFechaEval = onUpdateEdiFechaEval,
-                onAdjustEdiFechaEvalYear = onAdjustEdiFechaEvalYear
+                onAdjustEdiFechaEvalYear = onAdjustEdiFechaEvalYear,
+                onConfirmTermWithoutWeeks = onConfirmTermWithoutWeeks,
+                onClearRegisteredEg = onClearRegisteredEg,
+                onConfirmContradictionKeepRegisteredEg = onConfirmContradictionKeepRegisteredEg,
+                onConfirmContradictionAsPretermWithoutWeeks = onConfirmContradictionAsPretermWithoutWeeks,
+                onUpdateEgSemanas = onUpdateEgSemanas,
+                onOpenArchivedPreview = onOpenArchivedPreview,
+                onRequestRestoreArchived = onRequestRestoreArchived,
+                onStartNewEvaluationEpisode = onStartNewEvaluationEpisode,
+                onOpenCorrectBirthDateDialog = { showCorrectBirthDateDialog = true },
+                onSaveEvaluationManually = onSaveEvaluationManually,
+                onToggleEvaluationHistory = onToggleEvaluationHistory,
+                onStartNewPatientEvaluation = { showNewPatientEvaluationDialog = true },
+                onContinueEvaluationFromHistory = onContinueEvaluationFromHistory,
+                onViewCompletedEvaluationFromHistory = onViewCompletedEvaluationFromHistory,
+                onEnableEditingForViewedCompletedEvaluation = onEnableEditingForViewedCompletedEvaluation,
+                onRequestDeleteEvaluationFromHistory = onRequestDeleteEvaluationFromHistory,
+                onUpdatePatientIdentification = onUpdatePatientIdentification
             )
 
             EdiInternalView.QUESTIONNAIRE_AND_FALLBACK -> EdiQuestionnaireAndFallbackView(
@@ -207,13 +372,18 @@ fun EdiScreen(
                 onRecordDualEvidence = onRecordDualEvidence,
                 onRecordFallbackResponse = onRecordFallbackResponse,
                 onRecordFallbackDualEvidence = onRecordFallbackDualEvidence,
-                onUpdateItemClinicalNote = onUpdateItemClinicalNote
+                onUpdateItemClinicalNote = onUpdateItemClinicalNote,
+                onConfirmTermWithoutWeeks = onConfirmTermWithoutWeeks,
+                onTogglePrematurez = onTogglePrematurez
             )
 
             EdiInternalView.RESULTS_TRACEABILITY -> EdiResultsTraceabilityView(
                 state = state,
                 onBack = onNavigateBack,
-                onNavigateView = onNavigateView
+                onNavigateView = onNavigateView,
+                onConfirmTermWithoutWeeks = onConfirmTermWithoutWeeks,
+                onTogglePrematurez = onTogglePrematurez,
+                onUseAgeSuggestedGroup = onUseAgeSuggestedGroup
             )
         }
     }
@@ -223,7 +393,24 @@ fun EdiScreen(
 private fun EdiSummary5AxesView(
     state: CredEdiUiState,
     onNavigateView: (EdiInternalView) -> Unit,
-    onOpenAxisQuestionnaire: (EdiAxis) -> Unit
+    onOpenAxisQuestionnaire: (EdiAxis) -> Unit,
+    onConfirmTermWithoutWeeks: () -> Unit = {},
+    onTogglePrematurez: (Boolean) -> Unit = {},
+    onUseAgeSuggestedGroup: () -> Unit = {},
+    onOpenArchivedPreview: (String) -> Unit = {},
+    onRequestRestoreArchived: (String) -> Unit = {},
+    onStartNewEvaluationEpisode: () -> Unit = {},
+    onOpenCorrectBirthDateDialog: () -> Unit = {},
+    onSaveEvaluationManually: () -> Unit = {},
+    onToggleEvaluationHistory: () -> Unit = {},
+    onStartNewPatientEvaluation: () -> Unit = {},
+    onContinueEvaluationFromHistory: (String) -> Unit = {},
+    onViewCompletedEvaluationFromHistory: (String) -> Unit = {},
+    onEnableEditingForViewedCompletedEvaluation: () -> Unit = {},
+    onRequestDeleteEvaluationFromHistory: (String) -> Unit = {},
+    onUpdatePatientIdentification: (String, String, String) -> Unit = { _, _, _ -> },
+    onPatientFullNameChange: (String) -> Unit = {},
+    onPatientDniChange: (String) -> Unit = {}
 ) {
     val palette = LocalGenderPalette.current
     val groupSpec = state.ediActiveGroupSpec
@@ -235,9 +422,9 @@ private fun EdiSummary5AxesView(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 14.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
             .testTag("edi_view_summary"),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         // Header
         Row(
@@ -249,14 +436,18 @@ private fun EdiSummary5AxesView(
                 Text(
                     text = "Evaluación del Desarrollo (EDI)",
                     color = DarkText,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.ExtraBold
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = "Manual EDI Peruano 2026 · 5 Ejes Oficiales",
                     color = SlateText,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
             PillBadge(
@@ -269,6 +460,14 @@ private fun EdiSummary5AxesView(
             )
         }
 
+        // MEDIO-06 — LOTE 3E: Sección independiente «IDENTIFICACIÓN DEL PACIENTE» al inicio del contenido EDI,
+        // ubicada antes de las tarjetas de edad, ejes, cuestionarios, botones de continuación y panel de historial.
+        EdiPatientIdentificationTopSection(
+            state = state,
+            onPatientFullNameChange = onPatientFullNameChange,
+            onPatientDniChange = onPatientDniChange
+        )
+
         // Chronological & Corrected Age Cards
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -276,7 +475,7 @@ private fun EdiSummary5AxesView(
         ) {
             ClinicalSectionCard(
                 modifier = Modifier.weight(1f),
-                contentPadding = 12.dp
+                contentPadding = 8.dp
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -286,21 +485,25 @@ private fun EdiSummary5AxesView(
                         imageVector = Icons.Outlined.CalendarToday,
                         contentDescription = "Edad cronológica",
                         tint = EdiBlueAccent,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(15.dp)
                     )
                     Text(
                         text = "Edad Cronológica",
                         color = SlateText,
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = if (state.ediHasFechaNacimientoValida) state.edadCronologicaAMD else "Sin fecha",
                     color = DarkText,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.ExtraBold
+                    fontSize = 15.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = if (state.ediHasFechaNacimientoValida) {
@@ -309,13 +512,15 @@ private fun EdiSummary5AxesView(
                         "Ingrese F.N. en Tab 1"
                     },
                     color = MutedText,
-                    fontSize = 11.sp
+                    fontSize = 10.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
 
             ClinicalSectionCard(
                 modifier = Modifier.weight(1f),
-                contentPadding = 12.dp
+                contentPadding = 8.dp
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -325,34 +530,45 @@ private fun EdiSummary5AxesView(
                         imageVector = Icons.Outlined.Schedule,
                         contentDescription = "Edad corregida",
                         tint = if (state.usaEdadCorregida) ClinicalGreen else SlateText,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(15.dp)
                     )
                     Text(
                         text = "Edad Corregida",
                         color = SlateText,
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = when {
-                        !state.ediHasFechaNacimientoValida -> "EG ${state.egSemanas}s ${state.egDias}d"
+                        state.ediHasGestationalContradiction -> state.ediGestationalAgeHeadlineForSummary
+                        state.isCorrectedAgePending -> "EDAD CORREGIDA PENDIENTE"
+                        state.isBirthMaturityConfirmationPendingInUnder24m -> "CONFIRMAR CONDICIÓN AL NACER"
+                        !state.ediHasFechaNacimientoValida -> state.ediGestationalAgeHeadlineForSummary
                         state.usaEdadCorregida -> state.edadCorregidaAMD
                         else -> "No aplica"
                     },
-                    color = DarkText,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.ExtraBold
+                    color = when {
+                        state.ediHasGestationalContradiction || state.isCorrectedAgePending -> DarkRedText
+                        state.isBirthMaturityConfirmationPendingInUnder24m -> WarningText
+                        else -> DarkText
+                    },
+                    fontSize = if (state.isCorrectedAgePending || state.isBirthMaturityConfirmationPendingInUnder24m) 11.sp else 15.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag("edi_summary_corrected_age_value")
                 )
                 Text(
-                    text = if (state.esPrematuro) {
-                        "Prematuro ${state.egSemanas}s ${state.egDias}d"
-                    } else {
-                        "A término (${state.egSemanas}s ${state.egDias}d)"
-                    },
-                    color = MutedText,
-                    fontSize = 11.sp
+                    text = state.ediGestationalAgeDisplay,
+                    color = if (state.ediHasGestationalContradiction) DarkRedText else MutedText,
+                    fontSize = 10.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag("edi_summary_ga_status_text")
                 )
             }
         }
@@ -363,11 +579,11 @@ private fun EdiSummary5AxesView(
             shape = RoundedCornerShape(20.dp),
             color = EdiNavy
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            Column(modifier = Modifier.padding(12.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.Top
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
@@ -414,7 +630,16 @@ private fun EdiSummary5AxesView(
                     }
                 }
 
-                if (state.ediManualGroupOverride) {
+                if (state.isEdiManualConsultationMode) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    PillBadge(
+                        text = "MODO CONSULTA MANUAL / SIMULACIÓN · EDAD NO VERIFICABLE",
+                        backgroundColor = Color(0xFF334155),
+                        textColor = Color(0xFFFDE68A),
+                        borderColor = Color(0xFFF59E0B),
+                        fontSizeSp = 10
+                    )
+                } else if (state.ediManualGroupOverride) {
                     Spacer(modifier = Modifier.height(8.dp))
                     PillBadge(
                         text = "Selección manual desde Banco (Edad sugiere ${state.ediCorrectedAgeComparison.automaticallyAssignedGroup?.code ?: "-"})",
@@ -425,6 +650,36 @@ private fun EdiSummary5AxesView(
                     )
                 }
             }
+        }
+
+        // Manual Consultation Mode / Unverifiable Age Banner
+        if (state.isEdiManualConsultationMode) {
+            EdiUnverifiableAgeConsultationBanner(
+                state = state,
+                testTag = "edi_summary_unverifiable_age_banner"
+            )
+        }
+
+        // Gestational Age Contradiction Warning (if present)
+        if (state.ediHasGestationalContradiction) {
+            EdiGestationalContradictionBanner(
+                state = state,
+                onGoToBank = { onNavigateView(EdiInternalView.GROUP_BANK_15) },
+                testTag = "edi_summary_ga_contradiction_banner"
+            )
+        }
+
+        // Birth Maturity Confirmation Pending Warning in < 24m (Option 2)
+        if (state.isBirthMaturityConfirmationPendingInUnder24m) {
+            EdiBirthMaturityPendingBanner(
+                state = state,
+                onConfirmTermWithoutWeeks = onConfirmTermWithoutWeeks,
+                onRegisterPreterm = {
+                    onTogglePrematurez(true)
+                    onNavigateView(EdiInternalView.GROUP_BANK_15)
+                },
+                testTag = "edi_summary_birth_maturity_pending_banner"
+            )
         }
 
         // Age Discrepancy or Out-of-range Warning
@@ -480,6 +735,21 @@ private fun EdiSummary5AxesView(
         // Priority Critical Warnings (visible even if incomplete)
         if (globalEval.hasPriorityCriticalWarning) {
             EdiPriorityWarningBanner(globalEval = globalEval)
+        }
+
+        // Group / Restored Session Compatibility Warning (MEDIO-02)
+        if (
+            state.ediHasGroupAgeMismatch ||
+            state.isRestoredSessionFromDifferentPatientOrEpisode ||
+            state.isRestoredSessionOriginUnverified ||
+            state.isRestoredSessionGestationalOrDateContextModified
+        ) {
+            EdiGroupAndRestoreCompatibilityBanner(
+                state = state,
+                onUseAgeSuggestedGroup = onUseAgeSuggestedGroup,
+                onGoToBank = { onNavigateView(EdiInternalView.GROUP_BANK_15) },
+                testTag = "edi_summary_compatibility_warning_banner"
+            )
         }
 
         // Progress + Calculated Status Card
@@ -713,6 +983,24 @@ private fun EdiSummary5AxesView(
                 Text("Ver Resultados EDI", fontWeight = FontWeight.Bold, color = DarkText, fontSize = 13.sp)
             }
         }
+
+        // Sección MEDIO-02 / MEDIO-06 Lote 3: Guardado e Historial de Evaluaciones
+        EdiArchivedSessionsTemporalSection(
+            state = state,
+            onOpenArchivedPreview = onOpenArchivedPreview,
+            onRequestRestoreArchived = onRequestRestoreArchived,
+            onStartNewEvaluationEpisode = onStartNewEvaluationEpisode,
+            onOpenCorrectBirthDateDialog = onOpenCorrectBirthDateDialog,
+            onSaveEvaluationManually = onSaveEvaluationManually,
+            onToggleEvaluationHistory = onToggleEvaluationHistory,
+            onStartNewPatientEvaluation = onStartNewPatientEvaluation,
+            onContinueEvaluationFromHistory = onContinueEvaluationFromHistory,
+            onViewCompletedEvaluationFromHistory = onViewCompletedEvaluationFromHistory,
+            onEnableEditingForViewedCompletedEvaluation = onEnableEditingForViewedCompletedEvaluation,
+            onRequestDeleteEvaluationFromHistory = onRequestDeleteEvaluationFromHistory,
+            onUpdatePatientIdentification = onUpdatePatientIdentification,
+            testTagPrefix = "edi_summary"
+        )
     }
 }
 
@@ -784,7 +1072,24 @@ private fun EdiGroupBank15View(
     onAdjustEgSemanas: (Int) -> Unit,
     onAdjustEgDias: (Int) -> Unit,
     onUpdateEdiFechaEval: (String) -> Unit,
-    onAdjustEdiFechaEvalYear: (Int) -> Unit
+    onAdjustEdiFechaEvalYear: (Int) -> Unit,
+    onConfirmTermWithoutWeeks: () -> Unit,
+    onClearRegisteredEg: () -> Unit,
+    onConfirmContradictionKeepRegisteredEg: () -> Unit,
+    onConfirmContradictionAsPretermWithoutWeeks: () -> Unit,
+    onUpdateEgSemanas: (Int) -> Unit,
+    onOpenArchivedPreview: (String) -> Unit = {},
+    onRequestRestoreArchived: (String) -> Unit = {},
+    onStartNewEvaluationEpisode: () -> Unit = {},
+    onOpenCorrectBirthDateDialog: () -> Unit = {},
+    onSaveEvaluationManually: () -> Unit = {},
+    onToggleEvaluationHistory: () -> Unit = {},
+    onStartNewPatientEvaluation: () -> Unit = {},
+    onContinueEvaluationFromHistory: (String) -> Unit = {},
+    onViewCompletedEvaluationFromHistory: (String) -> Unit = {},
+    onEnableEditingForViewedCompletedEvaluation: () -> Unit = {},
+    onRequestDeleteEvaluationFromHistory: (String) -> Unit = {},
+    onUpdatePatientIdentification: (String, String, String) -> Unit = { _, _, _ -> }
 ) {
     val comparison = state.ediCorrectedAgeComparison
     val filteredGroups = remember(state.ediGroupSearchQuery, state.ediGroupFilterCategory) {
@@ -862,6 +1167,13 @@ private fun EdiGroupBank15View(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (state.isEdiManualConsultationMode) {
+                EdiUnverifiableAgeConsultationBanner(
+                    state = state,
+                    testTag = "edi_bank_unverifiable_age_banner"
+                )
+            }
+
             // Gestational Age (Weeks + Days) & Evaluation Date Controls
             ClinicalSectionCard {
                 Text(
@@ -884,9 +1196,11 @@ private fun EdiGroupBank15View(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "EG registrada: ${state.ediGestationalAgeInput.originalLabel}",
-                            color = SlateText,
-                            fontSize = 11.sp
+                            text = "Estado EG: ${state.ediGestationalAgeDisplay}",
+                            color = if (state.ediHasGestationalContradiction) DarkRedText else SlateText,
+                            fontSize = 11.sp,
+                            fontWeight = if (state.ediHasGestationalContradiction) FontWeight.Bold else FontWeight.Normal,
+                            modifier = Modifier.testTag("edi_bank_ga_status_text")
                         )
                     }
                     Switch(
@@ -894,6 +1208,60 @@ private fun EdiGroupBank15View(
                         onCheckedChange = onTogglePrematurez,
                         modifier = Modifier.testTag("edi_prematurity_switch")
                     )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onConfirmTermWithoutWeeks,
+                        modifier = Modifier
+                            .defaultMinSize(minHeight = 40.dp)
+                            .testTag("edi_btn_confirm_term_no_weeks"),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = "Confirmar A término (sin semanas)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    if (!state.ediHasRegisteredEg && state.esPrematuro) {
+                        OutlinedButton(
+                            onClick = { onUpdateEgSemanas(32) },
+                            modifier = Modifier
+                                .defaultMinSize(minHeight = 40.dp)
+                                .testTag("edi_btn_register_32s"),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "Registrar 32s 0d exactas",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                    if (state.ediHasRegisteredEg) {
+                        OutlinedButton(
+                            onClick = onClearRegisteredEg,
+                            modifier = Modifier
+                                .defaultMinSize(minHeight = 40.dp)
+                                .testTag("edi_btn_clear_registered_eg"),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = "Limpiar EG",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -904,7 +1272,7 @@ private fun EdiGroupBank15View(
                     // Weeks stepper
                     StepperBox(
                         label = "Semanas EG",
-                        valueText = "${state.egSemanas} sem",
+                        valueText = if (state.ediHasRegisteredEg) "${state.egSemanas} sem" else "Sin reg.",
                         onMinus = { onAdjustEgSemanas(-1) },
                         onPlus = { onAdjustEgSemanas(1) },
                         minusTag = "edi_ga_weeks_minus",
@@ -914,7 +1282,7 @@ private fun EdiGroupBank15View(
                     // Days stepper (0..6, no rounding)
                     StepperBox(
                         label = "Días EG (0–6)",
-                        valueText = "${state.egDias} d",
+                        valueText = if (state.ediHasRegisteredEg) "${state.egDias} d" else "-- d",
                         onMinus = { onAdjustEgDias(-1) },
                         onPlus = { onAdjustEgDias(1) },
                         minusTag = "edi_ga_days_minus",
@@ -923,11 +1291,111 @@ private fun EdiGroupBank15View(
                     )
                 }
 
-                if (state.esPrematuro) {
+                if (state.ediHasGestationalContradiction) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("edi_ga_contradiction_card"),
+                        shape = RoundedCornerShape(14.dp),
+                        color = SoftRedBg,
+                        border = BorderStroke(1.5.dp, AlertRed)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "⚠ Contradicción de Edad Gestacional — Confirmación requerida",
+                                color = DarkRedText,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            Text(
+                                text = state.ediGestationalContradictionMessage,
+                                color = DarkText,
+                                fontSize = 11.5.sp
+                            )
+                            if (state.ediHasRegisteredEg && state.egSemanas < 37) {
+                                Button(
+                                    onClick = onConfirmContradictionKeepRegisteredEg,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 44.dp)
+                                        .testTag("edi_ga_confirm_keep_eg"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = EdiNavy),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text(
+                                        text = "Confirmar Pretérmino (${state.egSemanas}s ${state.egDias}d)",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = onConfirmTermWithoutWeeks,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 44.dp)
+                                        .testTag("edi_ga_confirm_term_no_weeks"),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, AlertRed)
+                                ) {
+                                    Text(
+                                        text = "Confirmar A término (sin semanas exactas)",
+                                        color = DarkRedText,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            } else if (state.ediHasRegisteredEg && state.egSemanas >= 37) {
+                                Button(
+                                    onClick = onConfirmContradictionKeepRegisteredEg,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 44.dp)
+                                        .testTag("edi_ga_confirm_keep_eg"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = EdiNavy),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text(
+                                        text = "Confirmar A término (${state.egSemanas}s ${state.egDias}d)",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                                OutlinedButton(
+                                    onClick = onConfirmContradictionAsPretermWithoutWeeks,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 44.dp)
+                                        .testTag("edi_ga_confirm_preterm_clear_eg"),
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = BorderStroke(1.dp, AlertRed)
+                                ) {
+                                    Text(
+                                        text = "Confirmar Prematuro (limpiar ≥37s e ingresar EG)",
+                                        color = DarkRedText,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                } else if (state.ediHasRegisteredEg && state.egSemanas < 37) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = state.ediGestationalAgeInput.formulaDocumentation,
                         color = EdiBlueAccent,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                } else if (!state.ediHasRegisteredEg && state.esPrematuro) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Prematuridad confirmada sin semanas exactas registradas. Ingrese semanas y días reales para la corrección EDI.",
+                        color = WarningText,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Medium
                     )
@@ -967,6 +1435,15 @@ private fun EdiGroupBank15View(
                         Text("+1a", fontWeight = FontWeight.Bold)
                     }
                 }
+            }
+
+            if (state.isBirthMaturityConfirmationPendingInUnder24m) {
+                EdiBirthMaturityPendingBanner(
+                    state = state,
+                    onConfirmTermWithoutWeeks = onConfirmTermWithoutWeeks,
+                    onRegisterPreterm = { onTogglePrematurez(true) },
+                    testTag = "edi_bank_birth_maturity_pending_banner"
+                )
             }
 
             // Comparison: Manual EDI vs Calendario CRED
@@ -1015,7 +1492,8 @@ private fun EdiGroupBank15View(
             // 15 Official Groups List
             filteredGroups.forEach { group ->
                 val isActive = group.groupNumber == state.ediEffectiveGroupNumber
-                val isSuggested = comparison.automaticallyAssignedGroup?.groupNumber == group.groupNumber
+                val isSuggested = !state.isBirthMaturityConfirmationPendingInUnder24m &&
+                    comparison.automaticallyAssignedGroup?.groupNumber == group.groupNumber
                 ClinicalSectionCard(
                     backgroundColor = if (isActive) EdiSoftBlueBg else Color.White,
                     borderColor = if (isActive) EdiBlueAccent else Color(0xFFE2E8F0),
@@ -1134,6 +1612,24 @@ private fun EdiGroupBank15View(
                     }
                 }
             }
+
+            // Sección MEDIO-02 / MEDIO-06 Lote 3 en Banco de Grupos: Guardado e Historial de Evaluaciones
+            EdiArchivedSessionsTemporalSection(
+                state = state,
+                onOpenArchivedPreview = onOpenArchivedPreview,
+                onRequestRestoreArchived = onRequestRestoreArchived,
+                onStartNewEvaluationEpisode = onStartNewEvaluationEpisode,
+                onOpenCorrectBirthDateDialog = onOpenCorrectBirthDateDialog,
+                onSaveEvaluationManually = onSaveEvaluationManually,
+                onToggleEvaluationHistory = onToggleEvaluationHistory,
+                onStartNewPatientEvaluation = onStartNewPatientEvaluation,
+                onContinueEvaluationFromHistory = onContinueEvaluationFromHistory,
+                onViewCompletedEvaluationFromHistory = onViewCompletedEvaluationFromHistory,
+                onEnableEditingForViewedCompletedEvaluation = onEnableEditingForViewedCompletedEvaluation,
+                onRequestDeleteEvaluationFromHistory = onRequestDeleteEvaluationFromHistory,
+                onUpdatePatientIdentification = onUpdatePatientIdentification,
+                testTagPrefix = "edi_bank"
+            )
         }
     }
 }
@@ -1196,17 +1692,24 @@ private fun EdiAgeComparisonCard(
     onUseAgeSuggestedGroup: () -> Unit,
     onConfirmAgeDiscrepancyResolution: (Int, String) -> Unit
 ) {
-    val isDiscrepancy = comparison.autoSelectionStatus ==
+    val isBlockedByGestation = state.ediHasGestationalContradiction ||
+        state.isCorrectedAgePending ||
+        state.isBirthMaturityConfirmationPendingInUnder24m
+    val isDiscrepancy = !isBlockedByGestation && comparison.autoSelectionStatus ==
         EdiGroupAutoSelectionStatus.BLOCKED_GROUP_DISCREPANCY_REQUIRES_PROFESSIONAL_REVIEW
-    val isOutOfRange = state.ediIsOutOfOfficialAgeRange
+    val isOutOfRange = !isBlockedByGestation && state.ediIsOutOfOfficialAgeRange
 
     val bg = when {
+        state.ediHasGestationalContradiction -> SoftRedBg
+        state.isCorrectedAgePending || state.isBirthMaturityConfirmationPendingInUnder24m -> SoftAmberBg
         isDiscrepancy && !state.ediIsDiscrepancyResolvedForCurrentInputs -> SoftAmberBg
         isOutOfRange -> SoftRedBg
         comparison.autoSelectionStatus == EdiGroupAutoSelectionStatus.AUTO_SELECTED_CONSISTENT -> SoftGreenBg
         else -> Color.White
     }
     val border = when {
+        state.ediHasGestationalContradiction -> BorderSoftRed
+        state.isCorrectedAgePending || state.isBirthMaturityConfirmationPendingInUnder24m -> BorderAmber
         isDiscrepancy && !state.ediIsDiscrepancyResolvedForCurrentInputs -> BorderAmber
         isOutOfRange -> BorderSoftRed
         comparison.autoSelectionStatus == EdiGroupAutoSelectionStatus.AUTO_SELECTED_CONSISTENT -> BorderSoftGreen
@@ -1232,30 +1735,58 @@ private fun EdiAgeComparisonCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text("Método Manual EDI (30d/12m)", color = SlateText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    text = "${comparison.manualMethodResult.effectiveAgeUsed.formattedMonthsDays} -> ${comparison.manualMethodResult.assignedGroup?.code ?: "Fuera de rango"}",
-                    color = DarkText,
-                    fontSize = 13.sp,
+                    text = when {
+                        state.ediHasGestationalContradiction -> "Confirmar EG (Bloqueado)"
+                        state.isCorrectedAgePending -> "EDAD CORREGIDA PENDIENTE"
+                        state.isBirthMaturityConfirmationPendingInUnder24m -> "Confirmar condición al nacer (Bloqueado)"
+                        else -> "${comparison.manualMethodResult.effectiveAgeUsed.formattedMonthsDays} -> ${comparison.manualMethodResult.assignedGroup?.code ?: "Fuera de rango"}"
+                    },
+                    color = if (isBlockedByGestation) DarkRedText else DarkText,
+                    fontSize = 12.5.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text("Método Calendario CRED", color = SlateText, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    text = "${comparison.calendarCredMethodResult.effectiveAgeUsed.formattedMonthsDays} -> ${comparison.calendarCredMethodResult.assignedGroup?.code ?: "Fuera de rango"}",
-                    color = DarkText,
-                    fontSize = 13.sp,
+                    text = when {
+                        state.ediHasGestationalContradiction -> "Confirmar EG (Bloqueado)"
+                        state.isCorrectedAgePending -> "EDAD CORREGIDA PENDIENTE"
+                        state.isBirthMaturityConfirmationPendingInUnder24m -> "Confirmar condición al nacer (Bloqueado)"
+                        else -> "${comparison.calendarCredMethodResult.effectiveAgeUsed.formattedMonthsDays} -> ${comparison.calendarCredMethodResult.assignedGroup?.code ?: "Fuera de rango"}"
+                    },
+                    color = if (isBlockedByGestation) DarkRedText else DarkText,
+                    fontSize = 12.5.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
         }
         Spacer(modifier = Modifier.height(6.dp))
         Text(
-            text = comparison.clinicalReviewMessage,
+            text = when {
+                state.ediHasGestationalContradiction ->
+                    "Asignación automática bloqueada: resuelva la contradicción entre prematuridad y edad gestacional registrada."
+                state.isCorrectedAgePending ->
+                    "Asignación automática bloqueada en menor de 24 meses: prematuridad confirmada sin EG exacta registrada (EDAD CORREGIDA PENDIENTE)."
+                state.isBirthMaturityConfirmationPendingInUnder24m ->
+                    "Asignación automática bloqueada en menor de 24 meses (${state.edadCronologicaAMD}): condición al nacer sin confirmar (UNSPECIFIED). Confirme si nació a término o prematuro."
+                else ->
+                    comparison.clinicalReviewMessage
+            },
             color = DarkText,
             fontSize = 12.sp
         )
+        if (!state.ediHasRegisteredEg) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Estado EG: ${state.ediGestationalAgeDisplay}.",
+                color = SlateText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
 
-        if (state.ediManualGroupOverride && comparison.automaticallyAssignedGroup != null) {
+        if (!isBlockedByGestation && state.ediManualGroupOverride && comparison.automaticallyAssignedGroup != null) {
             Spacer(modifier = Modifier.height(8.dp))
             OutlinedButton(
                 onClick = onUseAgeSuggestedGroup,
@@ -1354,7 +1885,9 @@ private fun EdiQuestionnaireAndFallbackView(
     onRecordDualEvidence: (String, Boolean?, Boolean?, Boolean?, String) -> Unit,
     onRecordFallbackResponse: (String, EdiItemResponse) -> Unit,
     onRecordFallbackDualEvidence: (String, Boolean?, Boolean?, Boolean?, String) -> Unit,
-    onUpdateItemClinicalNote: (String, String) -> Unit
+    onUpdateItemClinicalNote: (String, String) -> Unit,
+    onConfirmTermWithoutWeeks: () -> Unit = {},
+    onTogglePrematurez: (Boolean) -> Unit = {}
 ) {
     val groupSpec = state.ediActiveGroupSpec
     val globalEval = state.ediGlobalEvaluation
@@ -1399,6 +1932,14 @@ private fun EdiQuestionnaireAndFallbackView(
                             fontSize = 11.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "EG: ${state.ediGestationalAgeDisplay}",
+                            color = if (state.ediHasGestationalContradiction) DarkRedText else SlateText,
+                            fontSize = 10.5.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.testTag("edi_q_ga_status_text")
                         )
                     }
                     TextButton(
@@ -1452,6 +1993,30 @@ private fun EdiQuestionnaireAndFallbackView(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (state.isEdiManualConsultationMode) {
+                EdiUnverifiableAgeConsultationBanner(
+                    state = state,
+                    testTag = "edi_q_unverifiable_age_banner"
+                )
+            }
+            if (state.ediHasGestationalContradiction) {
+                EdiGestationalContradictionBanner(
+                    state = state,
+                    onGoToBank = { onNavigateView(EdiInternalView.GROUP_BANK_15) },
+                    testTag = "edi_q_ga_contradiction_banner"
+                )
+            }
+            if (state.isBirthMaturityConfirmationPendingInUnder24m) {
+                EdiBirthMaturityPendingBanner(
+                    state = state,
+                    onConfirmTermWithoutWeeks = onConfirmTermWithoutWeeks,
+                    onRegisterPreterm = {
+                        onTogglePrematurez(true)
+                        onNavigateView(EdiInternalView.GROUP_BANK_15)
+                    },
+                    testTag = "edi_q_birth_maturity_pending_banner"
+                )
+            }
             if (globalEval.hasPriorityCriticalWarning) {
                 EdiPriorityWarningBanner(globalEval = globalEval)
             }
@@ -1923,10 +2488,11 @@ private fun OfficialItemCard(
                 }
                 if (item.isListedWithHeaderMaterialOnly()) {
                     PillBadge(
-                        text = "Protocolo clínico sin lámina física (observación del cuidador)",
+                        text = "Material mencionado en el encabezado general; no indispensable para este reactivo",
                         backgroundColor = SoftGreenBg,
                         textColor = DarkGreenPill,
-                        fontSizeSp = 10
+                        fontSizeSp = 10,
+                        modifier = Modifier.testTag("edi_header_material_only_badge_$effectiveUniqueId")
                     )
                 }
             }
@@ -2314,7 +2880,10 @@ private fun EdiItemResponseBadge(
 private fun EdiResultsTraceabilityView(
     state: CredEdiUiState,
     onBack: () -> Unit,
-    onNavigateView: (EdiInternalView) -> Unit
+    onNavigateView: (EdiInternalView) -> Unit,
+    onConfirmTermWithoutWeeks: () -> Unit = {},
+    onTogglePrematurez: (Boolean) -> Unit = {},
+    onUseAgeSuggestedGroup: () -> Unit = {}
 ) {
     val groupSpec = state.ediActiveGroupSpec
     val globalEval = state.ediGlobalEvaluation
@@ -2327,7 +2896,9 @@ private fun EdiResultsTraceabilityView(
         state.fechaEvaluacion,
         state.esPrematuro,
         state.egSemanas,
-        state.egDias
+        state.egDias,
+        state.ediEgRegistrada,
+        state.ediBirthMaturityCondition
     ) { mutableStateOf<ExportPdfResult?>(null) }
     var openPdfError by remember(exportResult) { mutableStateOf<String?>(null) }
 
@@ -2388,9 +2959,43 @@ private fun EdiResultsTraceabilityView(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            if (state.ediHasGestationalContradiction) {
+                EdiGestationalContradictionBanner(
+                    state = state,
+                    onGoToBank = { onNavigateView(EdiInternalView.GROUP_BANK_15) },
+                    testTag = "edi_res_ga_contradiction_banner"
+                )
+            }
+
+            if (state.isBirthMaturityConfirmationPendingInUnder24m) {
+                EdiBirthMaturityPendingBanner(
+                    state = state,
+                    onConfirmTermWithoutWeeks = onConfirmTermWithoutWeeks,
+                    onRegisterPreterm = {
+                        onTogglePrematurez(true)
+                        onNavigateView(EdiInternalView.GROUP_BANK_15)
+                    },
+                    testTag = "edi_res_birth_maturity_pending_banner"
+                )
+            }
+
             // Priority Critical Alerts Banner (ALWAYS visible when hasPriorityCriticalWarning, even if INCOMPLETE)
             if (globalEval.hasPriorityCriticalWarning) {
                 EdiPriorityWarningBanner(globalEval = globalEval)
+            }
+
+            if (
+                state.ediHasGroupAgeMismatch ||
+                state.isRestoredSessionFromDifferentPatientOrEpisode ||
+                state.isRestoredSessionOriginUnverified ||
+                state.isRestoredSessionGestationalOrDateContextModified
+            ) {
+                EdiGroupAndRestoreCompatibilityBanner(
+                    state = state,
+                    onUseAgeSuggestedGroup = onUseAgeSuggestedGroup,
+                    onGoToBank = { onNavigateView(EdiInternalView.GROUP_BANK_15) },
+                    testTag = "edi_res_compatibility_warning_banner"
+                )
             }
 
             // Global Semaphore Card (STRICTLY from EdiGlobalSemaphoreEngine, NEVER manual)
@@ -2411,7 +3016,11 @@ private fun EdiResultsTraceabilityView(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     PillBadge(
-                        text = "SEMÁFORO CALCULADO · MOTOR EDI 2026",
+                        text = if (state.isEdiManualConsultationMode) {
+                            "INCOMPLETO / EDAD NO VERIFICABLE · MODO CONSULTA MANUAL"
+                        } else {
+                            "SEMÁFORO CALCULADO · MOTOR EDI 2026"
+                        },
                         backgroundColor = bannerFg.copy(alpha = 0.12f),
                         textColor = bannerFg,
                         fontSizeSp = 10
@@ -2433,6 +3042,13 @@ private fun EdiResultsTraceabilityView(
                 }
             }
 
+            if (state.isEdiManualConsultationMode) {
+                EdiUnverifiableAgeConsultationBanner(
+                    state = state,
+                    testTag = "edi_res_unverifiable_age_banner"
+                )
+            }
+
             // Child & Age Context
             ClinicalSectionCard {
                 Text(
@@ -2443,19 +3059,34 @@ private fun EdiResultsTraceabilityView(
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = "Sexo: ${state.sexo.label} · EG: ${state.ediGestationalAgeInput.originalLabel}",
-                    color = DarkText,
-                    fontSize = 12.sp
+                    text = "Sexo: ${state.sexo.label} · EG: ${state.ediGestationalAgeDisplay}",
+                    color = if (state.ediHasGestationalContradiction) DarkRedText else DarkText,
+                    fontSize = 12.sp,
+                    modifier = Modifier.testTag("edi_res_ga_status_text")
                 )
+                val resCorrectedAgeText = if (state.isBirthMaturityConfirmationPendingInUnder24m) {
+                    "CONFIRMAR CONDICIÓN AL NACER"
+                } else {
+                    state.edadCorregidaAMD
+                }
                 Text(
-                    text = "Edad Cronológica: ${if (state.ediHasFechaNacimientoValida) state.edadCronologicaAMD else "No ingresada"} · Edad Corregida: ${state.edadCorregidaAMD}",
+                    text = "Edad Cronológica: ${if (state.ediHasFechaNacimientoValida) state.edadCronologicaAMD else "No ingresada"} · Edad Corregida: $resCorrectedAgeText",
                     color = SlateText,
                     fontSize = 12.sp
                 )
                 if (state.ediHasFechaNacimientoValida) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = state.ediCorrectedAgeComparison.clinicalReviewMessage,
+                        text = when {
+                            state.ediHasGestationalContradiction ->
+                                "Asignación automática bloqueada: contradicción entre prematuridad y edad gestacional registrada."
+                            state.isCorrectedAgePending ->
+                                "Asignación automática bloqueada (< 24 meses): prematuridad confirmada sin EG exacta registrada (EDAD CORREGIDA PENDIENTE)."
+                            state.isBirthMaturityConfirmationPendingInUnder24m ->
+                                "Asignación automática bloqueada (< 24 meses): condición al nacer no confirmada (UNSPECIFIED). Confirme si nació a término o prematuro."
+                            else ->
+                                state.ediCorrectedAgeComparison.clinicalReviewMessage
+                        },
                         color = SlateText,
                         fontSize = 11.sp
                     )
@@ -2792,6 +3423,183 @@ private fun EdiResultsTraceabilityView(
 }
 
 @Composable
+private fun EdiUnverifiableAgeConsultationBanner(
+    state: CredEdiUiState,
+    testTag: String
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag),
+        shape = RoundedCornerShape(18.dp),
+        color = SoftAmberBg,
+        border = BorderStroke(1.5.dp, WarningAmber)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.WarningAmber,
+                    contentDescription = "Modo consulta manual por edad no verificable",
+                    tint = WarningAmber,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    text = "INCOMPLETO / EDAD NO VERIFICABLE · MODO DE CONSULTA MANUAL",
+                    color = WarningText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+            Text(
+                text = "${state.ediUnverifiableAgeReason} Puede consultar los 15 grupos, revisar los 270 reactivos y ensayar respuestas o retrocesos sin perder datos; el semáforo clínico definitivo y la Ficha Oficial PDF requieren fechas válidas.",
+                color = DarkText,
+                fontSize = 11.5.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun EdiBirthMaturityPendingBanner(
+    state: CredEdiUiState,
+    onConfirmTermWithoutWeeks: () -> Unit,
+    onRegisterPreterm: () -> Unit,
+    testTag: String
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag),
+        shape = RoundedCornerShape(18.dp),
+        color = SoftAmberBg,
+        border = BorderStroke(1.5.dp, WarningAmber)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.WarningAmber,
+                    contentDescription = "Condición al nacer pendiente de confirmación",
+                    tint = WarningAmber,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    text = "CONDICIÓN AL NACER PENDIENTE DE CONFIRMACIÓN (< 24 MESES)",
+                    color = WarningText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+            Text(
+                text = "Menor de 24 meses (${state.edadCronologicaAMD}) sin antecedente gestacional confirmado. Confirme si nació a término o prematuro antes de asignar automáticamente el grupo EDI o emitir el semáforo definitivo.",
+                color = DarkText,
+                fontSize = 11.5.sp
+            )
+            Button(
+                onClick = onConfirmTermWithoutWeeks,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 44.dp)
+                    .testTag("${testTag}_confirm_term"),
+                colors = ButtonDefaults.buttonColors(containerColor = EdiNavy),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(
+                    text = "Confirmar A término (sin semanas exactas)",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            OutlinedButton(
+                onClick = onRegisterPreterm,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 44.dp)
+                    .testTag("${testTag}_register_preterm"),
+                border = BorderStroke(1.dp, WarningAmber),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(
+                    text = "Registrar prematuridad y EG",
+                    color = WarningText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EdiGestationalContradictionBanner(
+    state: CredEdiUiState,
+    onGoToBank: () -> Unit,
+    testTag: String
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag),
+        shape = RoundedCornerShape(18.dp),
+        color = SoftRedBg,
+        border = BorderStroke(1.5.dp, AlertRed)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.WarningAmber,
+                    contentDescription = "Advertencia de edad gestacional contradictoria",
+                    tint = AlertRed,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    text = "CONTRADICCIÓN EN EDAD GESTACIONAL",
+                    color = DarkRedText,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+            Text(
+                text = state.ediGestationalContradictionMessage,
+                color = DarkText,
+                fontSize = 12.sp
+            )
+            OutlinedButton(
+                onClick = onGoToBank,
+                modifier = Modifier.defaultMinSize(minHeight = 44.dp),
+                border = BorderStroke(1.dp, AlertRed),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text(
+                    text = "Revisar y confirmar EG en Banco EDI",
+                    color = DarkRedText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun EdiPriorityWarningBanner(
     globalEval: EdiGlobalEvaluationResult
 ) {
@@ -2940,6 +3748,1950 @@ private fun EdiGroupChangeConfirmationDialog(
             }
         }
     )
+}
+
+@Composable
+private fun EdiGroupAndRestoreCompatibilityBanner(
+    state: CredEdiUiState,
+    onUseAgeSuggestedGroup: () -> Unit,
+    onGoToBank: () -> Unit,
+    testTag: String
+) {
+    val officialGroup = state.ediOfficialApplicableGroupNumber
+    val titleText = when {
+        state.isRestoredSessionFromDifferentPatientOrEpisode ->
+            "BLOQUEO DE SEGURIDAD · SESIÓN RESTAURADA DE OTRO EPISODIO / PACIENTE"
+        state.isRestoredSessionOriginUnverified ->
+            "BLOQUEO DE SEGURIDAD · CONTEXTO ORIGINAL NO VERIFICADO"
+        state.ediHasGroupAgeMismatch ->
+            "INCOMPATIBILIDAD ETARIA Y GESTACIONAL · G${state.ediEffectiveGroupNumber} vs G${officialGroup ?: "-"}"
+        else ->
+            "ADVERTENCIA · CONTEXTO MODIFICADO DESPUÉS DEL ARCHIVADO"
+    }
+    val bodyText = when {
+        state.isRestoredSessionFromDifferentPatientOrEpisode -> {
+            val orig = state.ediEngineState.restoredSessionOriginContext
+            "La sesión restaurada (${state.ediEngineState.restoredFromArchiveId}) fue registrada en el episodio ${orig?.workEpisodeId ?: "-"} (${orig?.sexoLabel ?: "-"}, F.N.: ${orig?.fechaNacimiento?.ifBlank { "Sin F.N." } ?: "-"}). No se permite reutilizar respuestas antiguas para emitir un dictamen definitivo en el episodio actual (${state.ediEngineState.currentWorkEpisodeId})."
+        }
+        state.isRestoredSessionOriginUnverified -> {
+            "La sesión restaurada (${state.ediEngineState.restoredFromArchiveId}) fue capturada con contexto clínico NO VERIFICADO (${state.ediEngineState.restoredSessionOriginContext?.effectiveAgeLabel ?: "NO VERIFICADO"}). Sus respuestas se conservan para revisión, pero no pueden emitir automáticamente un semáforo definitivo."
+        }
+        state.ediHasGroupAgeMismatch -> {
+            state.ediGroupAgeMismatchMessage
+        }
+        else -> {
+            val orig = state.ediEngineState.restoredSessionOriginContext
+            "La sesión restaurada (${state.ediEngineState.restoredFromArchiveId}) conserva su contexto original (${orig?.effectiveAgeLabel ?: "-"}, ${orig?.gestationalAgeDisplayLabel ?: "-"}). Verifique la correspondencia clínica actual."
+        }
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(testTag),
+        shape = RoundedCornerShape(18.dp),
+        color = SoftAmberBg,
+        border = BorderStroke(1.5.dp, WarningAmber)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.WarningAmber,
+                    contentDescription = "Advertencia de compatibilidad de sesión o grupo EDI",
+                    tint = WarningAmber,
+                    modifier = Modifier.size(20.dp)
+                )
+                Text(
+                    text = titleText,
+                    color = WarningText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.ExtraBold
+                )
+            }
+            Text(
+                text = bodyText,
+                color = DarkText,
+                fontSize = 11.5.sp
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (state.ediHasGroupAgeMismatch && officialGroup != null) {
+                    Button(
+                        onClick = onUseAgeSuggestedGroup,
+                        modifier = Modifier
+                            .weight(1f)
+                            .defaultMinSize(minHeight = 44.dp)
+                            .testTag("${testTag}_use_official_group"),
+                        colors = ButtonDefaults.buttonColors(containerColor = EdiNavy),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(
+                            text = "Cambiar a G$officialGroup oficial",
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                OutlinedButton(
+                    onClick = onGoToBank,
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 44.dp)
+                        .testTag("${testTag}_review_bank"),
+                    border = BorderStroke(1.dp, WarningAmber),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = "Revisar grupo en Banco EDI",
+                        color = WarningText,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EdiArchivedSessionsTemporalSection(
+    state: CredEdiUiState,
+    onOpenArchivedPreview: (String) -> Unit,
+    onRequestRestoreArchived: (String) -> Unit,
+    onStartNewEvaluationEpisode: () -> Unit,
+    onOpenCorrectBirthDateDialog: () -> Unit = {},
+    onSaveEvaluationManually: () -> Unit = {},
+    onToggleEvaluationHistory: () -> Unit = {},
+    onStartNewPatientEvaluation: () -> Unit = {},
+    onContinueEvaluationFromHistory: (String) -> Unit = {},
+    onViewCompletedEvaluationFromHistory: (String) -> Unit = {},
+    onEnableEditingForViewedCompletedEvaluation: () -> Unit = {},
+    onRequestDeleteEvaluationFromHistory: (String) -> Unit = {},
+    onUpdatePatientIdentification: (String, String, String) -> Unit = { _, _, _ -> },
+    testTagPrefix: String
+) {
+    // R3: Por privacidad, mostrar únicamente las entradas correspondientes al episodio actual
+    val currentEpisodeHistory = state.ediEngineState.currentEpisodeArchivedHistory
+    val previousEpisodesCount = state.ediEngineState.previousEpisodesArchivedCount
+    val isSavingNow = state.persistenceIndicatorState == AutosaveUiIndicatorState.SAVING
+
+    val (indicatorBg, indicatorFg, indicatorBorder) = when (state.persistenceIndicatorState) {
+        AutosaveUiIndicatorState.SAVED -> Triple(SoftGreenPill, DarkGreenPill, BorderSoftGreen)
+        AutosaveUiIndicatorState.PENDING_CHANGES -> Triple(SoftAmberPill, WarningText, BorderAmber)
+        AutosaveUiIndicatorState.SAVING -> Triple(EdiSoftBlueBg, EdiBlueAccent, EdiSoftBlueBorder)
+        AutosaveUiIndicatorState.ERROR -> Triple(SoftRedBg, DarkRedText, BorderSoftRed)
+        AutosaveUiIndicatorState.IDLE -> Triple(SoftGrayBg, SlateText, Color(0xFFCBD5E1))
+    }
+
+    ClinicalSectionCard(
+        backgroundColor = Color.White,
+        borderColor = EdiSoftBlueBorder,
+        modifier = Modifier.testTag("edi_archived_sessions_section")
+    ) {
+        // MEDIO-07: Ajuste visual del panel de guardado (sin título ni identificación duplicada;
+        // se conserva exclusivamente el indicador de estado de guardado sin espacios vacíos sobrantes).
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            PillBadge(
+                text = state.persistenceIndicatorState.displayLabel,
+                backgroundColor = indicatorBg,
+                textColor = indicatorFg,
+                borderColor = indicatorBorder,
+                fontSizeSp = 10,
+                modifier = Modifier.testTag("${testTagPrefix}_persistence_indicator_badge")
+            )
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        // MEDIO-06 — LOTE 3B: Únicos dos botones principales visibles en el panel:
+        // «Guardar evaluación» y «Ver historial / Ocultar historial»
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Button(
+                onClick = onSaveEvaluationManually,
+                enabled = !isSavingNow && !state.isReadOnlyConsultationMode,
+                modifier = Modifier
+                    .weight(1f)
+                    .defaultMinSize(minHeight = 48.dp)
+                    .testTag("${testTagPrefix}_save_evaluation_btn"),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = EdiBlueAccent,
+                    contentColor = Color.White
+                ),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Verified,
+                    contentDescription = "Guardar evaluación",
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(5.dp))
+                Text(
+                    text = if (isSavingNow) "Guardando…" else "Guardar evaluación",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            OutlinedButton(
+                onClick = onToggleEvaluationHistory,
+                modifier = Modifier
+                    .weight(1f)
+                    .defaultMinSize(minHeight = 48.dp)
+                    .testTag("${testTagPrefix}_toggle_history_btn"),
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, EdiSoftBlueBorder),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = if (state.isEvaluationHistoryExpanded) EdiSoftBlueBg else Color.White,
+                    contentColor = EdiNavy
+                ),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp)
+            ) {
+                Icon(
+                    imageVector = if (state.isEvaluationHistoryExpanded) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore,
+                    contentDescription = if (state.isEvaluationHistoryExpanded) "Ocultar historial" else "Ver historial",
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = if (state.isEvaluationHistoryExpanded) "Ocultar historial" else "Ver historial",
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        // MEDIO-06 — LOTE 3 (Sección 4.B): Banner de modo consulta de solo lectura para evaluaciones completadas
+        if (state.isReadOnlyConsultationMode) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("${testTagPrefix}_readonly_consultation_banner"),
+                shape = RoundedCornerShape(10.dp),
+                color = SoftAmberBg,
+                border = BorderStroke(1.dp, WarningAmber)
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Modo consulta de evaluación completada (solo lectura): las respuestas y el semáforo definitivo están protegidos contra cambios accidentales.",
+                        color = DarkText,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    OutlinedButton(
+                        onClick = onEnableEditingForViewedCompletedEvaluation,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 48.dp)
+                            .testTag("${testTagPrefix}_enable_editing_btn"),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, EdiNavy)
+                    ) {
+                        Text(
+                            text = "Habilitar edición clínica",
+                            color = EdiNavy,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
+        // Avisos de confirmación real de guardado, recuperación automática o error con opción de reintentar
+        if (state.wasRestoredFromPersistence || state.persistenceStatusMessage != null || state.persistenceRecoveryErrorMessage != null) {
+            Spacer(modifier = Modifier.height(8.dp))
+            val isErrorBanner = state.persistenceIndicatorState == AutosaveUiIndicatorState.ERROR ||
+                state.persistenceRecoveryErrorMessage != null
+            val bannerBg = when {
+                isErrorBanner -> SoftRedBg
+                state.wasRestoredFromPersistence -> EdiSoftBlueBg
+                else -> SoftGreenBg
+            }
+            val bannerBorder = when {
+                isErrorBanner -> BorderSoftRed
+                state.wasRestoredFromPersistence -> EdiSoftBlueBorder
+                else -> BorderSoftGreen
+            }
+            val bannerTextColor = when {
+                isErrorBanner -> DarkRedText
+                state.wasRestoredFromPersistence -> EdiNavy
+                else -> DarkGreenPill
+            }
+            val bannerText = state.persistenceRecoveryErrorMessage
+                ?: state.persistenceStatusMessage
+                ?: if (state.wasRestoredFromPersistence) "Evaluación recuperada" else ""
+
+            if (bannerText.isNotBlank()) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("${testTagPrefix}_persistence_status_banner"),
+                    shape = RoundedCornerShape(10.dp),
+                    color = bannerBg,
+                    border = BorderStroke(1.dp, bannerBorder)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = bannerText,
+                            color = bannerTextColor,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (isErrorBanner) {
+                            OutlinedButton(
+                                onClick = onSaveEvaluationManually,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .defaultMinSize(minHeight = 48.dp)
+                                    .testTag("${testTagPrefix}_retry_save_btn"),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, AlertRed)
+                            ) {
+                                Text(
+                                    text = "Reintentar guardado",
+                                    color = DarkRedText,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // MEDIO-06 — LOTE 3D (Sección 3): Lista plegable simplificada de evaluaciones guardadas en Room
+        // (sin tarjeta «Gestión multipaciente» ni botón duplicado de nueva evaluación)
+        if (state.isEvaluationHistoryExpanded) {
+            Spacer(modifier = Modifier.height(10.dp))
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("${testTagPrefix}_saved_history_list"),
+                shape = RoundedCornerShape(12.dp),
+                color = SoftGrayBg,
+                border = BorderStroke(1.dp, Color(0xFFCBD5E1))
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "Historial local en dispositivo (${state.savedEvaluationHistory.size} evaluación(es) registrada(s))",
+                        color = DarkText,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+
+                    if (state.savedEvaluationHistory.isEmpty()) {
+                        Text(
+                            text = "No hay evaluaciones guardadas en el historial local de este dispositivo.",
+                            color = MutedText,
+                            fontSize = 11.5.sp,
+                            modifier = Modifier.testTag("${testTagPrefix}_saved_history_empty_text")
+                        )
+                    } else {
+                        state.savedEvaluationHistory.forEach { item ->
+                            val isCurrentActiveEval = item.evaluationUuid == state.evaluationUuid
+                            val patientDisplay = item.patientIdentification
+                                .historyTitleLine(item.evaluationUuid)
+                            val patientDniDisplay = item.patientIdentification.historyDniLine
+                            val stateLabel = when {
+                                item.status == EvaluationPersistenceStatus.COMPLETED -> "Completada"
+                                item.status == EvaluationPersistenceStatus.ARCHIVED -> "Archivada"
+                                item.isActiveDraft -> "En curso"
+                                else -> "Incompleta"
+                            }
+                            val (stateBg, stateFg) = when (stateLabel) {
+                                "Completada" -> SoftGreenPill to DarkGreenPill
+                                "En curso" -> EdiSoftBlueBg to EdiBlueAccent
+                                "Archivada" -> SoftGrayBg to SlateText
+                                else -> SoftAmberPill to WarningText
+                            }
+                            val semaphoreDisplayLabel = if (item.isDefinitiveSemaphore) {
+                                when (item.semaphoreCode) {
+                                    "VERDE" -> "Verde"
+                                    "AMARILLO" -> "Amarillo"
+                                    "ROJO" -> "Rojo"
+                                    else -> item.semaphoreLabel
+                                }
+                            } else {
+                                "Sin semáforo definitivo"
+                            }
+                            val (semBg, semFg) = if (item.isDefinitiveSemaphore) {
+                                when (item.semaphoreCode) {
+                                    "VERDE" -> SoftGreenPill to DarkGreenPill
+                                    "AMARILLO" -> SoftAmberPill to WarningText
+                                    "ROJO" -> SoftRedBg to DarkRedText
+                                    else -> SoftGrayBg to SlateText
+                                }
+                            } else {
+                                SoftGrayBg to SlateText
+                            }
+
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("${testTagPrefix}_history_card_${item.evaluationUuid}"),
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isCurrentActiveEval) EdiSoftBlueBg else Color.White,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isCurrentActiveEval) EdiBlueAccent else Color(0xFFCBD5E1)
+                                )
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = patientDisplay,
+                                                color = DarkText,
+                                                fontSize = 12.5.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                modifier = Modifier
+                                                    .testTag("${testTagPrefix}_history_patient_label_${item.evaluationUuid}")
+                                            )
+                                            Text(
+                                                text = patientDniDisplay,
+                                                color = SlateText,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                modifier = Modifier
+                                                    .testTag("${testTagPrefix}_history_patient_dni_${item.evaluationUuid}")
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        PillBadge(
+                                            text = stateLabel,
+                                            backgroundColor = stateBg,
+                                            textColor = stateFg,
+                                            fontSizeSp = 10,
+                                            modifier = Modifier.testTag("${testTagPrefix}_history_state_badge_${item.evaluationUuid}")
+                                        )
+                                    }
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Grupo EDI: ${item.activeGroupCode} (${item.activeGroupTitle}) · Reactivos: ${item.answeredMandatoryCount}/${item.totalMandatoryCount}",
+                                            color = DarkText,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        PillBadge(
+                                            text = semaphoreDisplayLabel,
+                                            backgroundColor = semBg,
+                                            textColor = semFg,
+                                            fontSizeSp = 10,
+                                            modifier = Modifier.testTag("${testTagPrefix}_history_semaphore_badge_${item.evaluationUuid}")
+                                        )
+                                    }
+
+                                    Text(
+                                        text = "Fecha evaluación: ${item.fechaEvaluacion.ifBlank { "No registrada" }} · Último guardado: ${formatHistoryEpochMillis(item.updatedAtEpochMillis)}",
+                                        color = SlateText,
+                                        fontSize = 10.5.sp
+                                    )
+
+                                    Text(
+                                        text = "Antropometría: ${item.anthropometrySummaryLabel} · ID: ${item.evaluationUuid}",
+                                        color = SlateText,
+                                        fontSize = 10.5.sp
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        if (item.status == EvaluationPersistenceStatus.COMPLETED) {
+                                            Button(
+                                                onClick = { onViewCompletedEvaluationFromHistory(item.evaluationUuid) },
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .defaultMinSize(minHeight = 48.dp)
+                                                    .testTag("${testTagPrefix}_history_view_btn_${item.evaluationUuid}"),
+                                                colors = ButtonDefaults.buttonColors(containerColor = EdiNavy),
+                                                shape = RoundedCornerShape(10.dp)
+                                            ) {
+                                                Text(
+                                                    text = "Ver",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        } else {
+                                            Button(
+                                                onClick = { onContinueEvaluationFromHistory(item.evaluationUuid) },
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .defaultMinSize(minHeight = 48.dp)
+                                                    .testTag("${testTagPrefix}_history_continue_btn_${item.evaluationUuid}"),
+                                                colors = ButtonDefaults.buttonColors(containerColor = EdiBlueAccent),
+                                                shape = RoundedCornerShape(10.dp)
+                                            ) {
+                                                Text(
+                                                    text = "Continuar",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+
+                                        OutlinedButton(
+                                            onClick = { onRequestDeleteEvaluationFromHistory(item.evaluationUuid) },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .defaultMinSize(minHeight = 48.dp)
+                                                .testTag("${testTagPrefix}_history_delete_btn_${item.evaluationUuid}"),
+                                            shape = RoundedCornerShape(10.dp),
+                                            border = BorderStroke(1.dp, AlertRed)
+                                        ) {
+                                            Text(
+                                                text = "Eliminar",
+                                                color = DarkRedText,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // MEDIO-06 — LOTE 3D (Secciones 4 y 7):
+        // Sustitución del control visible «Nuevo episodio» / «Opciones de episodio EDI» por «Nueva evaluación»,
+        // que solicita primero la identificación del paciente antes de crear un registro con UUID nuevo.
+        // El botón «Corregir fecha de nacimiento del mismo paciente» se retira de la vista principal,
+        // conservando íntegramente las reglas clínicas de fecha/edad y el gestor interno de episodios.
+        OutlinedButton(
+            onClick = onStartNewPatientEvaluation,
+            modifier = Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 48.dp)
+                .testTag("${testTagPrefix}_new_evaluation_btn"),
+            shape = RoundedCornerShape(10.dp),
+            border = BorderStroke(1.dp, EdiNavy),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = Color.White,
+                contentColor = EdiNavy
+            ),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Add,
+                contentDescription = "Nueva evaluación",
+                tint = EdiNavy,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "Nueva evaluación",
+                color = EdiNavy,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // MEDIO-06 — LOTE 3 (Sección 8): Aviso obligatorio de guardado local en el dispositivo
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("edi_archived_ephemeral_notice"),
+            shape = RoundedCornerShape(12.dp),
+            color = SoftAmberBg,
+            border = BorderStroke(1.dp, BorderAmber)
+        ) {
+            Row(
+                modifier = Modifier.padding(10.dp),
+                verticalAlignment = Alignment.Top,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Info,
+                    contentDescription = "Aviso de guardado local en el dispositivo",
+                    tint = WarningAmber,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = "Las evaluaciones se guardan localmente en este dispositivo. Puedes recuperarlas desde el historial. Si se eliminan los datos de la aplicación o se restablece el emulador, los registros locales podrían perderse",
+                    color = DarkText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        // Notificación cuando se abre un nuevo episodio o se registra estado de restauración (R1/R2/R3)
+        state.ediEngineState.lastRestoreStatusMessage?.let { statusMsg ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("edi_episode_status_message"),
+                shape = RoundedCornerShape(10.dp),
+                color = EdiSoftBlueBg,
+                border = BorderStroke(1.dp, EdiSoftBlueBorder)
+            ) {
+                Text(
+                    text = statusMsg,
+                    color = EdiNavy,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                )
+            }
+        }
+
+        // Privacidad de episodios anteriores (R3)
+        if (previousEpisodesCount > 0) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("edi_previous_episodes_protected_notice"),
+                shape = RoundedCornerShape(10.dp),
+                color = SoftGrayBg,
+                border = BorderStroke(1.dp, Color(0xFFCBD5E1))
+            ) {
+                Text(
+                    text = "Privacidad por episodio: $previousEpisodesCount evaluación(es) de episodio(s) anterior(es) permanecen resguardadas y ocultas en el episodio actual (${state.ediEngineState.currentWorkEpisodeId}).",
+                    color = SlateText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                )
+            }
+        }
+
+        // R2: Cuando existan archivos previos en el episodio actual y la sesión activa esté vacía,
+        // facilitar la elección explícita entre continuar el mismo episodio o comenzar uno nuevo.
+        if (currentEpisodeHistory.isNotEmpty() && !state.ediEngineState.activeSession.hasRecordedClinicalResponses) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("${testTagPrefix}_empty_active_continuity_card"),
+                shape = RoundedCornerShape(12.dp),
+                color = SoftAmberBg,
+                border = BorderStroke(1.dp, WarningAmber)
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "Sesión activa vacía con evaluaciones archivadas (${state.ediEngineState.currentWorkEpisodeId})",
+                        color = WarningText,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Text(
+                        text = "La coincidencia de sexo y fecha de nacimiento NO verifica la identidad del paciente. Antes de reutilizar evaluaciones archivadas, confirme si continúa con el mismo paciente o inicie un nuevo episodio si atiende a otro paciente.",
+                        color = DarkText,
+                        fontSize = 11.sp
+                    )
+                    OutlinedButton(
+                        onClick = onStartNewEvaluationEpisode,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = 48.dp)
+                            .testTag("${testTagPrefix}_other_patient_new_episode_btn"),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, WarningAmber)
+                    ) {
+                        Text(
+                            text = "Es otro paciente — iniciar nuevo episodio",
+                            color = WarningText,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
+        state.ediEngineState.restoredFromArchiveId?.let { restoredId ->
+            Spacer(modifier = Modifier.height(8.dp))
+            PillBadge(
+                text = "Trazabilidad activa: restaurada desde $restoredId",
+                backgroundColor = EdiSoftBlueBg,
+                textColor = EdiBlueAccent,
+                borderColor = EdiSoftBlueBorder,
+                fontSizeSp = 11
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (currentEpisodeHistory.isEmpty()) {
+            Text(
+                text = "No hay evaluaciones archivadas en el episodio activo (${state.ediEngineState.currentWorkEpisodeId}).",
+                color = MutedText,
+                fontSize = 12.sp,
+                modifier = Modifier.testTag("edi_archived_empty_text")
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                currentEpisodeHistory.forEach { entry ->
+                    val compatibility = state.evaluateArchivedEntryCompatibility(entry)
+                    val isRestorableInCurrentEpisode =
+                        entry.originContext.workEpisodeId == state.ediEngineState.currentWorkEpisodeId &&
+                            compatibility.status != EdiArchivedCompatibilityStatus.INCOMPATIBLE_DIFFERENT_PATIENT_OR_EPISODE
+                    val (badgeBg, badgeFg) = when (compatibility.status) {
+                        EdiArchivedCompatibilityStatus.COMPATIBLE -> SoftGreenPill to DarkGreenPill
+                        EdiArchivedCompatibilityStatus.INCOMPATIBLE_GROUP_OR_GESTATIONAL_STATE -> SoftAmberPill to WarningText
+                        EdiArchivedCompatibilityStatus.INCOMPATIBLE_ORIGIN_UNVERIFIED -> SoftAmberPill to WarningText
+                        EdiArchivedCompatibilityStatus.INCOMPATIBLE_DIFFERENT_PATIENT_OR_EPISODE -> SoftRedBg to DarkRedText
+                    }
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("edi_archived_entry_${entry.archiveId}"),
+                        shape = RoundedCornerShape(14.dp),
+                        color = SoftGrayBg,
+                        border = BorderStroke(1.dp, Color(0xFFCBD5E1))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    PillBadge(
+                                        text = "G${entry.groupNumber}",
+                                        backgroundColor = EdiNavy,
+                                        textColor = Color.White,
+                                        fontSizeSp = 10
+                                    )
+                                    Text(
+                                        text = "ID: ${entry.archiveId} · Orden #${entry.sequenceNumber}",
+                                        color = DarkText,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                                PillBadge(
+                                    text = compatibility.status.badgeLabel,
+                                    backgroundColor = badgeBg,
+                                    textColor = badgeFg,
+                                    fontSizeSp = 9
+                                )
+                            }
+
+                            Text(
+                                text = "Resumen: ${entry.snapshot.summaryText}",
+                                color = DarkText,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Origen (${entry.originContext.workEpisodeId}): ${entry.originContext.originValidationState.displayLabel} · ${entry.originContext.sexoLabel} · F.N.: ${entry.originContext.fechaNacimiento.ifBlank { "Sin F.N." }} · F.Eval: ${entry.originContext.fechaEvaluacion.ifBlank { "Sin F.Eval" }} · ${entry.originContext.gestationalAgeDisplayLabel}",
+                                color = SlateText,
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                text = "Compatibilidad: ${compatibility.summaryLabel}",
+                                color = badgeFg,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedButton(
+                                    onClick = { onOpenArchivedPreview(entry.archiveId) },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .defaultMinSize(minHeight = 48.dp)
+                                        .testTag("edi_archived_preview_btn_${entry.archiveId}"),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("Revisar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Button(
+                                    onClick = { onRequestRestoreArchived(entry.archiveId) },
+                                    enabled = isRestorableInCurrentEpisode,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .defaultMinSize(minHeight = 48.dp)
+                                        .testTag("edi_archived_restore_btn_${entry.archiveId}"),
+                                    colors = ButtonDefaults.buttonColors(containerColor = EdiNavy),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("Restaurar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EdiArchivedSessionPreviewDialog(
+    state: CredEdiUiState,
+    entry: EdiArchivedSessionEntry,
+    onClose: () -> Unit,
+    onRequestRestore: () -> Unit
+) {
+    val compatibility = state.evaluateArchivedEntryCompatibility(entry)
+    val canRestoreInCurrentEpisode =
+        entry.originContext.workEpisodeId == state.ediEngineState.currentWorkEpisodeId &&
+            compatibility.status != EdiArchivedCompatibilityStatus.INCOMPATIBLE_DIFFERENT_PATIENT_OR_EPISODE
+    val snap = entry.snapshot
+    val answeredCurrent = snap.currentGroupResponses.filterValues { it != EdiItemResponse.UNANSWERED }
+    val answeredFallback = snap.fallbackGroupResponses.filterValues { it != EdiItemResponse.UNANSWERED }
+    val answeredFrb = snap.frbResponses.filterValues { it != EdiItemResponse.UNANSWERED }
+    val answeredEn = snap.enResponses.filterValues { it != EdiItemResponse.UNANSWERED }
+
+    AlertDialog(
+        onDismissRequest = onClose,
+        modifier = Modifier.testTag("edi_archived_preview_dialog"),
+        title = {
+            Text(
+                text = "Vista previa · ${entry.archiveId} (Grupo G${entry.groupNumber} · Orden #${entry.sequenceNumber})",
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 15.sp
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Modo de solo lectura: revisar esta sesión archivada NO modifica la evaluación activa (G${state.ediEffectiveGroupNumber}).",
+                    color = EdiBlueAccent,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "Motivo de archivado: ${entry.archiveReason}",
+                    color = DarkText,
+                    fontSize = 12.sp
+                )
+                Text(
+                    text = "Contexto clínico de origen (${entry.originContext.workEpisodeId}): ${entry.originContext.originValidationState.displayLabel} · ${entry.originContext.sexoLabel} · F.N.: ${entry.originContext.fechaNacimiento.ifBlank { "No registrada" }} · F.Eval: ${entry.originContext.fechaEvaluacion.ifBlank { "No registrada" }} · ${entry.originContext.gestationalAgeDisplayLabel} · Edad: ${entry.originContext.effectiveAgeLabel}",
+                    color = SlateText,
+                    fontSize = 11.5.sp
+                )
+                Text(
+                    text = "Estado de compatibilidad actual: ${compatibility.summaryLabel}",
+                    color = if (compatibility.isFullyCompatibleForDefinitiveEvaluation) ClinicalGreen else WarningText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                compatibility.warnings.forEach { warn ->
+                    Text(
+                        text = "• $warn",
+                        color = WarningText,
+                        fontSize = 11.sp
+                    )
+                }
+                HorizontalDivider()
+                Text(
+                    text = "Resumen del Snapshot (${snap.summaryText})",
+                    color = DarkText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                if (answeredCurrent.isNotEmpty()) {
+                    Text(
+                        text = "Reactivos grupo G${entry.groupNumber}: ${answeredCurrent.entries.joinToString { "${it.key}=${it.value.name}" }}",
+                        color = DarkText,
+                        fontSize = 11.sp
+                    )
+                }
+                if (answeredFallback.isNotEmpty()) {
+                    Text(
+                        text = "Retrocesos: ${answeredFallback.entries.joinToString { "${it.key}=${it.value.name}" }}",
+                        color = DarkText,
+                        fontSize = 11.sp
+                    )
+                }
+                if (answeredFrb.isNotEmpty()) {
+                    Text(
+                        text = "FRB: ${answeredFrb.entries.joinToString { "${it.key}=${it.value.name}" }}",
+                        color = DarkText,
+                        fontSize = 11.sp
+                    )
+                }
+                if (answeredEn.isNotEmpty()) {
+                    Text(
+                        text = "EN: ${answeredEn.entries.joinToString { "${it.key}=${it.value.name}" }}",
+                        color = DarkText,
+                        fontSize = 11.sp
+                    )
+                }
+                if (snap.dualEvidenceRecords.isNotEmpty()) {
+                    Text(
+                        text = "Evidencias duales: ${snap.dualEvidenceRecords.entries.joinToString { "${it.key}(obs=${it.value.directObservationEvidence}, ent=${it.value.directedInterviewEvidence}, res=${it.value.professionalHumanResolution})" }}",
+                        color = DarkText,
+                        fontSize = 11.sp
+                    )
+                }
+                if (snap.itemClinicalNotes.isNotEmpty()) {
+                    Text(
+                        text = "Notas clínicas: ${snap.itemClinicalNotes.entries.joinToString { "${it.key}: \"${it.value}\"" }}",
+                        color = DarkText,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onClose,
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("edi_archived_preview_close_btn")
+                ) {
+                    Text("Cerrar vista previa", fontSize = 12.sp)
+                }
+                Button(
+                    onClick = onRequestRestore,
+                    enabled = canRestoreInCurrentEpisode,
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("edi_archived_preview_restore_btn"),
+                    colors = ButtonDefaults.buttonColors(containerColor = EdiNavy)
+                ) {
+                    Text("Solicitar restauración", fontSize = 12.sp)
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun EdiRestoreArchivedConfirmationDialog(
+    request: EdiPendingRestoreRequest,
+    onToggleSamePatientContinuity: (Boolean) -> Unit,
+    onConfirm: () -> Unit,
+    onStartNewEpisodeForOtherPatient: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val entry = request.targetEntry
+    val snap = entry.snapshot
+    AlertDialog(
+        onDismissRequest = onCancel,
+        modifier = Modifier.testTag("edi_restore_confirm_dialog"),
+        title = {
+            Text(
+                text = "Confirmar restauración · ${entry.archiveId} (Grupo G${entry.groupNumber})",
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 15.sp
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Se restaurará íntegramente la sesión ${entry.archiveId} (Orden #${entry.sequenceNumber}, Grupo G${entry.groupNumber}) sin mezclar respuestas con la evaluación activa.",
+                    color = DarkText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    text = "Contenido a restaurar: ${snap.summaryText}",
+                    color = SlateText,
+                    fontSize = 11.5.sp
+                )
+                Text(
+                    text = "Contexto original (${entry.originContext.workEpisodeId}): ${entry.originContext.originValidationState.displayLabel} · ${entry.originContext.sexoLabel} · F.N.: ${entry.originContext.fechaNacimiento.ifBlank { "No registrada" }} · ${entry.originContext.gestationalAgeDisplayLabel}",
+                    color = SlateText,
+                    fontSize = 11.5.sp
+                )
+                Text(
+                    text = "Nota de seguridad clínica: la coincidencia de sexo y fecha de nacimiento NO verifica la identidad del paciente.",
+                    color = WarningText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (request.warnings.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = SoftAmberBg,
+                        border = BorderStroke(1.dp, WarningAmber),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("edi_restore_warnings_box")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "Advertencias de restauración y compatibilidad:",
+                                color = WarningText,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                            request.warnings.forEach { warning ->
+                                Text(
+                                    text = "• $warning",
+                                    color = DarkText,
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // R2: Confirmación deliberada obligatoria de continuidad del paciente y episodio
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (request.samePatientAndEpisodeConfirmed) SoftGreenPill else SoftGrayBg,
+                    border = BorderStroke(
+                        1.5.dp,
+                        if (request.samePatientAndEpisodeConfirmed) ClinicalGreen else Color(0xFF94A3B8)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            onToggleSamePatientContinuity(!request.samePatientAndEpisodeConfirmed)
+                        }
+                        .testTag("edi_restore_confirm_same_patient_checkbox")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Checkbox(
+                            checked = request.samePatientAndEpisodeConfirmed,
+                            onCheckedChange = null
+                        )
+                        Text(
+                            text = "Confirmo que esta evaluación corresponde al mismo paciente y episodio de atención",
+                            color = DarkText,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onConfirm,
+                    enabled = request.samePatientAndEpisodeConfirmed,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("edi_restore_confirm_btn"),
+                    colors = ButtonDefaults.buttonColors(containerColor = EdiNavy)
+                ) {
+                    Text(
+                        text = if (request.activeSessionWillBeArchivedFirst) {
+                            "Archivar sesión activa y restaurar ${entry.archiveId}"
+                        } else {
+                            "Confirmar restauración de ${entry.archiveId}"
+                        },
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                OutlinedButton(
+                    onClick = onStartNewEpisodeForOtherPatient,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("edi_restore_other_patient_new_episode_btn"),
+                    border = BorderStroke(1.dp, WarningAmber)
+                ) {
+                    Text(
+                        text = "Es otro paciente — iniciar nuevo episodio",
+                        color = WarningText,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                TextButton(
+                    onClick = onCancel,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("edi_restore_cancel_btn")
+                ) {
+                    Text("Cancelar y mantener sesión activa", fontSize = 12.sp)
+                }
+            }
+        }
+    )
+}
+
+private fun parseStrictDialogDate(raw: String): com.example.model.SimpleDate? {
+    val trimmed = raw.trim().take(10)
+    val normalized = if (trimmed.length == 8 && trimmed.all { it.isDigit() }) {
+        "${trimmed.substring(0, 2)}/${trimmed.substring(2, 4)}/${trimmed.substring(4, 8)}"
+    } else {
+        trimmed
+    }
+    if (normalized.isEmpty()) return null
+    val parts = normalized.split("/", "-", ".")
+    if (parts.size != 3) return null
+    val p0 = parts[0].trim().toIntOrNull() ?: return null
+    val p1 = parts[1].trim().toIntOrNull() ?: return null
+    val p2 = parts[2].trim().toIntOrNull() ?: return null
+    if (parts[0].trim().length == 4 && p0 in 1900..2100 && p1 in 1..12 && p2 in 1..com.example.model.ClinicalAgeCalculator.daysInMonth(p0, p1)) {
+        return com.example.model.SimpleDate(day = p2, month = p1, year = p0)
+    }
+    if (parts[2].trim().length == 4 && p2 in 1900..2100 && p1 in 1..12 && p0 in 1..com.example.model.ClinicalAgeCalculator.daysInMonth(p2, p1)) {
+        return com.example.model.SimpleDate(day = p0, month = p1, year = p2)
+    }
+    return null
+}
+
+@Composable
+private fun EdiCorrectSamePatientBirthDateDialog(
+    state: CredEdiUiState,
+    onDismiss: () -> Unit,
+    onConfirmCorrection: (String, String) -> Unit,
+    onRejectedCorrectionAttempt: (String, String) -> Unit
+) {
+    var newBirthDateInput by remember { mutableStateOf("") }
+    var correctionReasonInput by remember { mutableStateOf("") }
+    var validationError by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.testTag("edi_correct_birth_date_dialog"),
+        title = {
+            Text(
+                text = "Corregir fecha de nacimiento del mismo paciente",
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 15.sp,
+                modifier = Modifier.testTag("edi_correct_fn_dialog_title")
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = SoftAmberBg,
+                    border = BorderStroke(1.5.dp, WarningAmber),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edi_correct_fn_same_patient_warning")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "Si se trata de otro paciente, utilice Nuevo episodio. Esta acción solo corrige los datos del mismo paciente",
+                            color = WarningText,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            text = "Conserva el episodio activo (${state.ediEngineState.currentWorkEpisodeId}), el historial archivado y los antecedentes de captura originales sin modificarlos retroactivamente.",
+                            color = DarkText,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Fecha de nacimiento actual: ${state.fechaNacimiento.ifBlank { "No registrada" }}",
+                    color = DarkText,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.testTag("edi_correct_fn_current_date_text")
+                )
+                Text(
+                    text = "Fecha de evaluación actual: ${state.fechaEvaluacion.ifBlank { "No registrada" }}",
+                    color = SlateText,
+                    fontSize = 11.5.sp,
+                    modifier = Modifier.testTag("edi_correct_fn_eval_date_text")
+                )
+
+                validationError?.let { errorMsg ->
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = SoftRedBg,
+                        border = BorderStroke(1.dp, AlertRed),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("edi_correct_fn_error_banner")
+                    ) {
+                        Text(
+                            text = errorMsg,
+                            color = DarkRedText,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = newBirthDateInput,
+                    onValueChange = {
+                        newBirthDateInput = it
+                        validationError = null
+                    },
+                    label = { Text("Nueva fecha de nacimiento (DD/MM/AAAA)") },
+                    singleLine = true,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edi_correct_fn_new_date_input")
+                )
+
+                OutlinedTextField(
+                    value = correctionReasonInput,
+                    onValueChange = {
+                        correctionReasonInput = it
+                        validationError = null
+                    },
+                    label = { Text("Motivo obligatorio de la corrección") },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("edi_correct_fn_reason_input")
+                )
+            }
+        },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("edi_correct_fn_cancel_btn"),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Cancelar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = {
+                        val trimmedReason = correctionReasonInput.trim()
+                        val parsedBirth = parseStrictDialogDate(newBirthDateInput)
+                        val parsedEval = com.example.model.ClinicalAgeCalculator.parseDate(state.fechaEvaluacion)
+                        when {
+                            trimmedReason.isEmpty() -> {
+                                validationError = "Es obligatorio indicar el motivo de la corrección."
+                                onRejectedCorrectionAttempt(newBirthDateInput, correctionReasonInput)
+                            }
+                            parsedBirth == null -> {
+                                validationError = "La fecha ingresada no tiene un formato válido o no existe en el calendario (use DD/MM/AAAA)."
+                                onRejectedCorrectionAttempt(newBirthDateInput, correctionReasonInput)
+                            }
+                            parsedEval == null -> {
+                                validationError = "La fecha de evaluación actual no es válida para comprobar compatibilidad."
+                                onRejectedCorrectionAttempt(newBirthDateInput, correctionReasonInput)
+                            }
+                            java.time.LocalDate.of(parsedBirth.year, parsedBirth.month, parsedBirth.day)
+                                .isAfter(java.time.LocalDate.of(parsedEval.year, parsedEval.month, parsedEval.day)) -> {
+                                validationError = "La nueva fecha de nacimiento no puede ser posterior a la fecha de evaluación (${state.fechaEvaluacion})."
+                                onRejectedCorrectionAttempt(newBirthDateInput, correctionReasonInput)
+                            }
+                            else -> {
+                                validationError = null
+                                onConfirmCorrection(newBirthDateInput.trim(), trimmedReason)
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("edi_correct_fn_confirm_btn"),
+                    colors = ButtonDefaults.buttonColors(containerColor = EdiNavy),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Confirmar corrección", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    )
+}
+
+private fun formatHistoryEpochMillis(epochMillis: Long): String {
+    if (epochMillis <= 0L) return "No registrado"
+    return runCatching {
+        val instant = java.time.Instant.ofEpochMilli(epochMillis)
+        val zoned = instant.atZone(java.time.ZoneId.systemDefault())
+        val formatter = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")
+        zoned.format(formatter)
+    }.getOrElse {
+        epochMillis.toString()
+    }
+}
+
+@Composable
+private fun EdiHistoryDeleteConfirmationDialog(
+    summary: SavedEvaluationSummary,
+    onCancel: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    val patientLabel = summary.patientIdentification.historyTitleLine(summary.evaluationUuid)
+    val patientDniLabel = summary.patientIdentification.historyDniLine
+    val stateLabel = when {
+        summary.status == EvaluationPersistenceStatus.COMPLETED -> "Completada"
+        summary.status == EvaluationPersistenceStatus.ARCHIVED -> "Archivada"
+        summary.isActiveDraft -> "En curso"
+        else -> "Incompleta"
+    }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        modifier = Modifier.testTag("edi_history_delete_confirm_dialog"),
+        title = {
+            Text(
+                text = "Confirmar eliminación de evaluación",
+                fontWeight = FontWeight.ExtraBold,
+                fontSize = 15.sp,
+                modifier = Modifier.testTag("edi_history_delete_dialog_title")
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = SoftRedBg,
+                    border = BorderStroke(1.dp, AlertRed),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "¿Desea eliminar permanentemente esta evaluación del almacenamiento local?",
+                            color = DarkRedText,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            text = "Paciente: $patientLabel · $patientDniLabel",
+                            color = DarkText,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "ID único: ${summary.evaluationUuid} · Estado: $stateLabel",
+                            color = DarkText,
+                            fontSize = 11.sp
+                        )
+                        Text(
+                            text = "Grupo EDI: ${summary.activeGroupCode} (${summary.activeGroupTitle}) · Fecha evaluación: ${summary.fechaEvaluacion.ifBlank { "No registrada" }}",
+                            color = SlateText,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+                Text(
+                    text = "Esta operación elimina únicamente el registro seleccionado en la base de datos local sin afectar las demás evaluaciones guardadas.",
+                    color = SlateText,
+                    fontSize = 11.sp
+                )
+            }
+        },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onCancel,
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("edi_history_delete_cancel_btn"),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Cancelar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = onConfirm,
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("edi_history_delete_confirm_btn"),
+                    colors = ButtonDefaults.buttonColors(containerColor = AlertRed),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = "Confirmar eliminación",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    )
+}
+
+/**
+ * MEDIO-06 — LOTE 3D (Secciones 5 y 6):
+ * Diálogo previo de identificación del nuevo paciente al pulsar «Nueva evaluación».
+ * Solicita nombre completo y apellidos en un único campo + DNI peruano de 8 dígitos
+ * (preservando ceros iniciales) o flujo explícito de identificación pendiente sin DNI ficticio.
+ * No crea ningún registro al abrirse; solo al confirmar «Crear evaluación» tras validar y guardar
+ * de forma segura la evaluación anterior.
+ */
+@Composable
+private fun EdiNewPatientIdentificationDialog(
+    onDismiss: () -> Unit,
+    onCreateEvaluation: (String, String, Boolean) -> NewEvaluationCreationResult
+) {
+    var fullName by remember { mutableStateOf("") }
+    var dni by remember { mutableStateOf("") }
+    var allowPendingId by remember { mutableStateOf(false) }
+    var validationError by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.testTag("new_evaluation_patient_id_dialog"),
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(EdiSoftBlueBg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Badge,
+                        contentDescription = "Identificación del nuevo paciente",
+                        tint = EdiNavy,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Text(
+                    text = "Nueva evaluación",
+                    color = EdiNavy,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 16.sp,
+                    modifier = Modifier.testTag("new_eval_dialog_title")
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "Registre los datos de identificación del nuevo paciente antes de crear la ficha. La evaluación actual se guardará primero en el historial.",
+                    color = SlateText,
+                    fontSize = 11.5.sp
+                )
+
+                OutlinedTextField(
+                    value = fullName,
+                    onValueChange = { raw ->
+                        fullName = raw.replace("\r", " ").replace("\n", " ")
+                        validationError = null
+                    },
+                    label = { Text("Nombre completo y apellidos") },
+                    placeholder = { Text("Ej. Mateo Sebastián Paredes") },
+                    trailingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Person,
+                            contentDescription = "Nombre completo y apellidos",
+                            tint = MutedText
+                        )
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Words,
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Next
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("new_eval_full_name_input")
+                )
+
+                OutlinedTextField(
+                    value = dni,
+                    onValueChange = { raw ->
+                        dni = raw.filter { it.isDigit() }.take(8)
+                        validationError = null
+                    },
+                    enabled = !allowPendingId,
+                    label = { Text("DNI (8 dígitos)") },
+                    placeholder = { Text("8 dígitos (ej. 00451234)") },
+                    trailingIcon = {
+                        Icon(
+                            imageVector = Icons.Outlined.Pin,
+                            contentDescription = "DNI de 8 dígitos",
+                            tint = MutedText
+                        )
+                    },
+                    supportingText = {
+                        Text(
+                            text = if (allowPendingId) {
+                                "Sin DNI asignado (identificación pendiente; nunca se asigna un DNI ficticio)."
+                            } else {
+                                "Solo dígitos numéricos · ${dni.length}/8 dígitos (conserva ceros iniciales)."
+                            },
+                            fontSize = 10.5.sp
+                        )
+                    },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("new_eval_dni_input")
+                )
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 48.dp)
+                        .clickable {
+                            allowPendingId = !allowPendingId
+                            if (allowPendingId) {
+                                dni = ""
+                            }
+                            validationError = null
+                        },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = allowPendingId,
+                        onCheckedChange = { checked ->
+                            allowPendingId = checked
+                            if (checked) {
+                                dni = ""
+                            }
+                            validationError = null
+                        },
+                        modifier = Modifier.testTag("new_eval_pending_id_checkbox")
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Identificación pendiente (registrar sin DNI por ahora)",
+                        color = DarkText,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+
+                validationError?.let { errMsg ->
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("new_eval_validation_error"),
+                        shape = RoundedCornerShape(10.dp),
+                        color = SoftRedBg,
+                        border = BorderStroke(1.dp, AlertRed)
+                    ) {
+                        Text(
+                            text = errMsg,
+                            color = DarkRedText,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("new_eval_cancel_btn"),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = "Cancelar",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Button(
+                    onClick = {
+                        when (val result = onCreateEvaluation(fullName, dni, allowPendingId)) {
+                            is NewEvaluationCreationResult.Success -> {
+                                validationError = null
+                            }
+                            is NewEvaluationCreationResult.ValidationError -> {
+                                validationError = result.message
+                            }
+                            is NewEvaluationCreationResult.PersistenceError -> {
+                                validationError = result.message
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .defaultMinSize(minHeight = 48.dp)
+                        .testTag("new_eval_confirm_btn"),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = EdiBlueAccent,
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text(
+                        text = "Crear evaluación",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+    )
+}
+
+/**
+ * MEDIO-06 — LOTE 3E:
+ * Apartado independiente «IDENTIFICACIÓN DEL PACIENTE» al inicio de la pantalla principal EDI.
+ * Reproduce fielmente el diseño de la imagen de referencia (dos campos en una misma fila horizontal:
+ * ~65 % «NOMBRES Y APELLIDOS» y ~35 % «DNI» numérico de 8 dígitos preservando ceros iniciales),
+ * sincronizado con `PatientIdentificationData` del `evaluationUuid` activo, autoguardado en Room
+ * y bloqueado en modo consulta de solo lectura.
+ */
+@Composable
+private fun EdiPatientIdentificationTopSection(
+    state: CredEdiUiState,
+    onPatientFullNameChange: (String) -> Unit,
+    onPatientDniChange: (String) -> Unit
+) {
+    val fullNameFocusRequester = remember { FocusRequester() }
+    val dniFocusRequester = remember { FocusRequester() }
+    val idHeaderNavy = Color(0xFF1E2638)
+    val idPillContainer = Color(0xFFEEF2F7)
+    val idFieldContainer = Color(0xFFF3F6FA)
+    val dniText = state.patientIdentification.clinicalRecordCode
+    val isPartialDniInProgress = dniText.isNotEmpty() && dniText.length < 8
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("patient_identification_section"),
+        shape = RoundedCornerShape(22.dp),
+        color = Color.White,
+        shadowElevation = 1.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp)
+        ) {
+            // Encabezado con ícono circular de identificación + título en mayúsculas
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(idPillContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.Badge,
+                        contentDescription = "Identificación del paciente",
+                        tint = idHeaderNavy,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "IDENTIFICACIÓN DEL PACIENTE",
+                    color = idHeaderNavy,
+                    fontSize = 12.5.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 0.5.sp,
+                    modifier = Modifier.testTag("patient_identification_header")
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Dos campos en una sola fila horizontal: ~65 % Nombres y Apellidos | ~35 % DNI
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min)
+                    .testTag("patient_identification_row"),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Campo izquierdo (~65 %): NOMBRES Y APELLIDOS
+                Surface(
+                    modifier = Modifier
+                        .weight(0.65f)
+                        .fillMaxHeight()
+                        .clickable(enabled = !state.isReadOnlyConsultationMode) {
+                            fullNameFocusRequester.requestFocus()
+                        }
+                        .testTag("patient_full_name_container"),
+                    shape = RoundedCornerShape(16.dp),
+                    color = idFieldContainer
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "NOMBRES Y APELLIDOS",
+                                color = MutedText,
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 0.3.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Icon(
+                                imageVector = Icons.Outlined.Person,
+                                contentDescription = "Nombres y apellidos del paciente",
+                                tint = MutedText,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        BasicTextField(
+                            value = state.patientIdentification.patientIdentifierOrAlias,
+                            onValueChange = { raw ->
+                                onPatientFullNameChange(raw.replace("\r", " ").replace("\n", " "))
+                            },
+                            enabled = !state.isReadOnlyConsultationMode,
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Words,
+                                keyboardType = KeyboardType.Text,
+                                imeAction = ImeAction.Next
+                            ),
+                            cursorBrush = SolidColor(idHeaderNavy),
+                            textStyle = TextStyle(
+                                color = DarkText,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            decorationBox = { innerTextField ->
+                                Box(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    if (state.patientIdentification.patientIdentifierOrAlias.isEmpty()) {
+                                        Text(
+                                            text = "Ej. Mateo Sebastián Paredes",
+                                            color = SlateText.copy(alpha = 0.72f),
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = 18.dp)
+                                .focusRequester(fullNameFocusRequester)
+                                .testTag("patient_full_name_input")
+                        )
+                    }
+                }
+
+                // Campo derecho (~35 %): DNI (numérico, máx. 8 dígitos, preserva ceros iniciales y entradas parciales)
+                Surface(
+                    modifier = Modifier
+                        .weight(0.35f)
+                        .fillMaxHeight()
+                        .clickable(enabled = !state.isReadOnlyConsultationMode) {
+                            dniFocusRequester.requestFocus()
+                        }
+                        .testTag("patient_dni_container"),
+                    shape = RoundedCornerShape(16.dp),
+                    color = idFieldContainer
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "DNI",
+                                color = MutedText,
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 0.3.sp,
+                                maxLines = 1
+                            )
+                            Icon(
+                                imageVector = Icons.Outlined.Pin,
+                                contentDescription = "DNI del paciente",
+                                tint = MutedText,
+                                modifier = Modifier.size(14.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        BasicTextField(
+                            value = dniText,
+                            onValueChange = { raw ->
+                                onPatientDniChange(raw.filter { it.isDigit() }.take(8))
+                            },
+                            enabled = !state.isReadOnlyConsultationMode,
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Done
+                            ),
+                            cursorBrush = SolidColor(idHeaderNavy),
+                            textStyle = TextStyle(
+                                color = DarkText,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            decorationBox = { innerTextField ->
+                                Box(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    if (dniText.isEmpty()) {
+                                        Text(
+                                            text = "8 dígitos",
+                                            color = SlateText.copy(alpha = 0.72f),
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    }
+                                    innerTextField()
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .defaultMinSize(minHeight = 18.dp)
+                                .focusRequester(dniFocusRequester)
+                                .testTag("patient_dni_input")
+                        )
+                    }
+                }
+            }
+
+            if (isPartialDniInProgress) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "DNI en ingreso: ${dniText.length}/8 dígitos registrados (complete los 8 dígitos numéricos).",
+                    color = WarningText,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.testTag("patient_dni_partial_validation_hint")
+                )
+            }
+        }
+    }
 }
 
 private fun areaStatusColors(status: EdiAreaColorResult): Pair<Color, Color> = when (status) {

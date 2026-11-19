@@ -53,11 +53,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.ClassificationSeverity
 import com.example.model.CredEdiUiState
+import com.example.model.GlobalDiagnosisCompleteness
 import com.example.ui.components.HeadGearIcon
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.BorderAmber
 import com.example.ui.theme.BorderSoftGreen
 import com.example.ui.theme.BorderSoftRed
+import com.example.ui.theme.BorderSubtleGray
 import com.example.ui.theme.ClinicalGreen
 import com.example.ui.theme.DarkGreenPill
 import com.example.ui.theme.DarkRedText
@@ -66,6 +68,7 @@ import com.example.ui.theme.MutedText
 import com.example.ui.theme.SlateText
 import com.example.ui.theme.SoftAmberBg
 import com.example.ui.theme.SoftAmberPill
+import com.example.ui.theme.SoftGrayBg
 import com.example.ui.theme.SoftGreenBg
 import com.example.ui.theme.SoftGreenPill
 import com.example.ui.theme.SoftRedBg
@@ -211,18 +214,34 @@ fun DiagnosticoScreen(
                         }
 
                         // Right: EDAD CORREGIDA (EC)
+                        val isOmsOutOfRange = !state.isAgeDependentEvaluationBlocked && !globalDiag.isAvailable
                         Surface(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(16.dp),
-                            color = DiagDictamenGreenBg,
-                            border = BorderStroke(1.dp, DiagDictamenGreenBorder)
+                            color = when {
+                                state.isAgeDependentEvaluationBlocked -> SoftAmberBg
+                                isOmsOutOfRange -> SoftGrayBg
+                                else -> DiagDictamenGreenBg
+                            },
+                            border = BorderStroke(
+                                1.dp,
+                                when {
+                                    state.isAgeDependentEvaluationBlocked -> BorderAmber
+                                    isOmsOutOfRange -> BorderSubtleGray
+                                    else -> DiagDictamenGreenBorder
+                                }
+                            )
                         ) {
                             Column(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
                             ) {
                                 Text(
                                     text = "EDAD CORREGIDA (EC)",
-                                    color = DarkGreenPill,
+                                    color = when {
+                                        state.isAgeDependentEvaluationBlocked -> WarningText
+                                        isOmsOutOfRange -> SlateText
+                                        else -> DarkGreenPill
+                                    },
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.ExtraBold,
                                     letterSpacing = 0.3.sp
@@ -232,25 +251,37 @@ fun DiagnosticoScreen(
                                     text = buildAnnotatedString {
                                         withStyle(
                                             SpanStyle(
-                                                color = ClinicalGreen,
-                                                fontSize = 13.5.sp,
+                                                color = when {
+                                                    state.isAgeDependentEvaluationBlocked -> WarningText
+                                                    isOmsOutOfRange -> DarkText
+                                                    else -> ClinicalGreen
+                                                },
+                                                fontSize = if (state.isAgeDependentEvaluationBlocked || isOmsOutOfRange) 10.5.sp else 13.5.sp,
                                                 fontFamily = FontFamily.Monospace,
                                                 fontWeight = FontWeight.Black
                                             )
                                         ) {
-                                            append("${state.edadCorregidaAMD} ")
+                                            val ecDisplay = if (state.isBirthMaturityConfirmationPendingInUnder24m) {
+                                                "PENDIENTE DE CONFIRMACIÓN DE CONDICIÓN AL NACER"
+                                            } else {
+                                                "${state.edadCorregidaAMD} "
+                                            }
+                                            append(ecDisplay)
                                         }
-                                        withStyle(
-                                            SpanStyle(
-                                                color = ClinicalGreen,
-                                                fontSize = 10.sp,
-                                                fontFamily = FontFamily.Monospace,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        ) {
-                                            append("(Base Curva)")
+                                        if (!state.isAgeDependentEvaluationBlocked) {
+                                            withStyle(
+                                                SpanStyle(
+                                                    color = if (isOmsOutOfRange) SlateText else ClinicalGreen,
+                                                    fontSize = 10.sp,
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            ) {
+                                                append(if (isOmsOutOfRange) "(Sin ref. OMS)" else "(Base Curva)")
+                                            }
                                         }
-                                    }
+                                    },
+                                    modifier = Modifier.testTag("diagnostico_edad_corregida_text")
                                 )
                             }
                         }
@@ -261,25 +292,43 @@ fun DiagnosticoScreen(
             // =========================================================================
             // CARD 2: DICTAMEN NUTRICIONAL GLOBAL
             // =========================================================================
-            val (globalBg, globalBorder, globalCircleColor, globalTitleColor) = when (globalDiag.severity) {
-                ClassificationSeverity.NORMAL -> listOf(
-                    DiagDictamenGreenBg,
-                    DiagDictamenGreenBorder,
-                    ClinicalGreen,
-                    DarkGreenPill
+            val isGlobalUnavailable = !state.isAgeDependentEvaluationBlocked && !globalDiag.isAvailable
+            val isGlobalPartial = !state.isAgeDependentEvaluationBlocked &&
+                !isGlobalUnavailable &&
+                globalDiag.completeness == GlobalDiagnosisCompleteness.PARTIAL
+            val effectiveGlobalSeverity = if (state.isAgeDependentEvaluationBlocked) {
+                ClassificationSeverity.WARNING
+            } else {
+                globalDiag.severity
+            }
+            val (globalBg, globalBorder, globalCircleColor, globalTitleColor) = if (isGlobalUnavailable) {
+                listOf(
+                    SoftGrayBg,
+                    BorderSubtleGray,
+                    SlateText,
+                    DiagNavy
                 )
-                ClassificationSeverity.WARNING -> listOf(
-                    SoftAmberBg,
-                    BorderAmber,
-                    WarningAmber,
-                    WarningText
-                )
-                ClassificationSeverity.SEVERE -> listOf(
-                    SoftRedBg,
-                    BorderSoftRed,
-                    AlertRed,
-                    DarkRedText
-                )
+            } else {
+                when (effectiveGlobalSeverity) {
+                    ClassificationSeverity.NORMAL -> listOf(
+                        DiagDictamenGreenBg,
+                        DiagDictamenGreenBorder,
+                        ClinicalGreen,
+                        DarkGreenPill
+                    )
+                    ClassificationSeverity.WARNING -> listOf(
+                        SoftAmberBg,
+                        BorderAmber,
+                        WarningAmber,
+                        WarningText
+                    )
+                    ClassificationSeverity.SEVERE -> listOf(
+                        SoftRedBg,
+                        BorderSoftRed,
+                        AlertRed,
+                        DarkRedText
+                    )
+                }
             }
 
             Surface(
@@ -294,7 +343,11 @@ fun DiagnosticoScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         ShieldCheckIcon(
-                            tint = ClinicalGreen,
+                            tint = when {
+                                isGlobalUnavailable -> SlateText
+                                isGlobalPartial || effectiveGlobalSeverity != ClassificationSeverity.NORMAL -> globalCircleColor
+                                else -> ClinicalGreen
+                            },
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
@@ -337,17 +390,52 @@ fun DiagnosticoScreen(
                                             .background(globalCircleColor),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.size(18.dp)
-                                        )
+                                        when {
+                                            isGlobalUnavailable -> {
+                                                Text(
+                                                    text = "—",
+                                                    color = Color.White,
+                                                    fontSize = 15.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    modifier = Modifier.testTag("diagnostico_global_unavailable_badge")
+                                                )
+                                            }
+                                            state.isAgeDependentEvaluationBlocked ||
+                                                isGlobalPartial ||
+                                                effectiveGlobalSeverity != ClassificationSeverity.NORMAL -> {
+                                                Text(
+                                                    text = "!",
+                                                    color = Color.White,
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    modifier = Modifier.testTag("diagnostico_global_warning_badge")
+                                                )
+                                            }
+                                            else -> {
+                                                Icon(
+                                                    imageVector = Icons.Default.Check,
+                                                    contentDescription = "Normalidad global confirmada",
+                                                    tint = Color.White,
+                                                    modifier = Modifier
+                                                        .size(18.dp)
+                                                        .testTag("diagnostico_global_check_icon")
+                                                )
+                                            }
+                                        }
                                     }
                                     Spacer(modifier = Modifier.width(12.dp))
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
-                                            text = globalDiag.title,
+                                            text = when {
+                                                state.ediHasGestationalContradiction ->
+                                                    "BLOQUEADO POR CONTRADICCIÓN GESTACIONAL"
+                                                state.isBirthMaturityConfirmationPendingInUnder24m ->
+                                                    "PENDIENTE DE CONFIRMACIÓN DE CONDICIÓN AL NACER"
+                                                state.isCorrectedAgePending ->
+                                                    "DIAGNÓSTICO PENDIENTE DE EDAD CORREGIDA"
+                                                else ->
+                                                    globalDiag.title
+                                            },
                                             color = globalTitleColor,
                                             fontSize = 15.sp,
                                             lineHeight = 19.sp,
@@ -356,32 +444,64 @@ fun DiagnosticoScreen(
                                         )
                                         Spacer(modifier = Modifier.height(3.dp))
                                         Text(
-                                            text = if (globalDiag.severity == ClassificationSeverity.NORMAL) {
-                                                "Canal de desarrollo armónico y proporcional"
-                                            } else {
-                                                globalDiag.description
+                                            text = when {
+                                                state.ediHasGestationalContradiction ->
+                                                    "Resuelva la contradicción entre prematuridad y edad gestacional para emitir el diagnóstico definitivo"
+                                                state.isBirthMaturityConfirmationPendingInUnder24m ->
+                                                    "Paciente menor de 24 meses (${state.edadCronologicaAMD}) sin condición gestacional confirmada. Confirme si nació a término o prematuro"
+                                                state.isCorrectedAgePending ->
+                                                    "Pretérmino confirmado (< 24 meses) sin EG exacta registrada. Confirme las semanas de gestación"
+                                                isGlobalUnavailable || isGlobalPartial ->
+                                                    globalDiag.description
+                                                globalDiag.severity == ClassificationSeverity.NORMAL ->
+                                                    "Canal de desarrollo armónico y proporcional"
+                                                else ->
+                                                    globalDiag.description
                                             },
-                                            color = globalCircleColor,
+                                            color = if (isGlobalUnavailable) SlateText else globalCircleColor,
                                             fontSize = 11.5.sp,
                                             lineHeight = 15.sp,
-                                            fontWeight = FontWeight.SemiBold
+                                            fontWeight = FontWeight.SemiBold,
+                                            modifier = Modifier.testTag("diagnostico_global_description")
                                         )
                                     }
                                 }
 
                                 Spacer(modifier = Modifier.width(8.dp))
 
+                                val isNoAnthropometricMeasurements =
+                                    !state.hasPesoIngresado && !state.hasLongitudIngresada && state.isOmsAgeRangeAvailable
                                 Surface(
                                     shape = RoundedCornerShape(50),
-                                    color = DiagNavy
+                                    color = if (isGlobalUnavailable) Color(0xFF475569) else DiagNavy
                                 ) {
                                     Text(
-                                        text = "Z = ${globalDiag.zGlobal.formatSignedDecimal(1)} DE",
+                                        text = when {
+                                            state.isBirthMaturityConfirmationPendingInUnder24m ->
+                                                "Pendiente cond."
+                                            state.isAgeDependentEvaluationBlocked ->
+                                                "EC Pendiente"
+                                            isNoAnthropometricMeasurements ->
+                                                "Sin medición"
+                                            isGlobalUnavailable ->
+                                                "Fuera de rango"
+                                            isGlobalPartial -> if (globalDiag.zGlobal.isFinite()) {
+                                                "Parcial · Z=${globalDiag.zGlobal.formatSignedDecimal(1)}"
+                                            } else {
+                                                "Parcial · N/D"
+                                            }
+                                            !globalDiag.zGlobal.isFinite() ->
+                                                "Sin ref."
+                                            else ->
+                                                "Z = ${globalDiag.zGlobal.formatSignedDecimal(1)} DE"
+                                        },
                                         color = Color.White,
                                         fontSize = 11.5.sp,
                                         fontFamily = FontFamily.Monospace,
                                         fontWeight = FontWeight.ExtraBold,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                        modifier = Modifier
+                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                            .testTag("diagnostico_global_z_badge")
                                     )
                                 }
                             }
@@ -390,31 +510,97 @@ fun DiagnosticoScreen(
                             HorizontalDivider(thickness = 1.dp, color = globalBorder.copy(alpha = 0.6f))
                             Spacer(modifier = Modifier.height(10.dp))
 
+                            val pendingAgeBadgeLabel = if (state.isBirthMaturityConfirmationPendingInUnder24m) {
+                                "Pendiente cond."
+                            } else {
+                                "Pendiente EC"
+                            }
+
                             // 3 Sub-status boxes: Aguda (P/T), Crónica (T/E), Cráneo (PC/E)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
+                                val isPtMissing = (!state.hasPesoIngresado || !state.hasLongitudIngresada) &&
+                                    !state.isPesoTemporalOrInvalid && !state.isLongitudTemporalOrInvalid
+                                val isPtPendingVal = (!state.hasPesoIngresado || !state.hasLongitudIngresada) &&
+                                    (state.isPesoTemporalOrInvalid || state.isLongitudTemporalOrInvalid)
+                                val isPtUnregisteredOrInvalid = !state.hasPesoIngresado || !state.hasLongitudIngresada
+                                val ptMiniUnavailable = isPtUnregisteredOrInvalid || (!state.ediHasGestationalContradiction && !ptEval.isReferenceAvailable)
                                 DictamenMiniStatusCard(
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.weight(1f).testTag("diagnostico_mini_pt_card"),
                                     label = "Aguda (P/T)",
-                                    value = if (ptEval.severity == ClassificationSeverity.NORMAL) "Sin D. Aguda" else ptEval.shortClassification,
-                                    severity = ptEval.severity,
-                                    borderColor = globalBorder.copy(alpha = 0.6f)
+                                    value = when {
+                                        isPtMissing -> "Sin medición"
+                                        isPtPendingVal -> "Pendiente val."
+                                        state.ediHasGestationalContradiction -> "Confirmar EG"
+                                        !ptEval.isReferenceAvailable -> "No disp."
+                                        ptEval.severity == ClassificationSeverity.NORMAL -> "Sin D. Aguda"
+                                        else -> ptEval.shortClassification
+                                    },
+                                    severity = if (!isPtUnregisteredOrInvalid && state.ediHasGestationalContradiction) {
+                                        ClassificationSeverity.WARNING
+                                    } else {
+                                        ptEval.severity
+                                    },
+                                    borderColor = globalBorder.copy(alpha = 0.6f),
+                                    isUnavailable = ptMiniUnavailable
                                 )
+                                val isTeMissing = !state.hasLongitudIngresada && !state.isLongitudTemporalOrInvalid
+                                val isTePendingVal = state.isLongitudTemporalOrInvalid
+                                val isTeUnregisteredOrInvalid = !state.hasLongitudIngresada
+                                val teMiniUnavailable = isTeUnregisteredOrInvalid || (!state.isAgeDependentEvaluationBlocked && !teEval.isReferenceAvailable)
                                 DictamenMiniStatusCard(
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.weight(1f).testTag("diagnostico_mini_te_card"),
                                     label = "Crónica (T/E)",
-                                    value = if (teEval.severity == ClassificationSeverity.NORMAL) "Sin Retraso" else teEval.shortClassification,
-                                    severity = teEval.severity,
-                                    borderColor = globalBorder.copy(alpha = 0.6f)
+                                    value = when {
+                                        isTeMissing -> "Sin medición"
+                                        isTePendingVal -> "Pendiente val."
+                                        state.isAgeDependentEvaluationBlocked -> pendingAgeBadgeLabel
+                                        !teEval.isReferenceAvailable -> "No disp."
+                                        teEval.severity == ClassificationSeverity.NORMAL -> "Sin Retraso"
+                                        else -> teEval.shortClassification
+                                    },
+                                    severity = if (!isTeUnregisteredOrInvalid && state.isAgeDependentEvaluationBlocked) {
+                                        ClassificationSeverity.WARNING
+                                    } else {
+                                        teEval.severity
+                                    },
+                                    borderColor = globalBorder.copy(alpha = 0.6f),
+                                    isUnavailable = teMiniUnavailable
                                 )
+                                val isPcMissing = !state.hasPerimetroCefalicoIngresado && !state.isPerimetroCefalicoTemporalOrInvalid
+                                val isPcPendingValidation = state.isPerimetroCefalicoTemporalOrInvalid
+                                val isPcUnregisteredOrInvalid = !state.hasPerimetroCefalicoIngresado
+                                val pcMiniUnavailable = isPcUnregisteredOrInvalid || (!state.isAgeDependentEvaluationBlocked && !globalDiag.pcAvailable)
                                 DictamenMiniStatusCard(
-                                    modifier = Modifier.weight(1f),
+                                    modifier = Modifier.weight(1f).testTag("diagnostico_mini_pce_card"),
                                     label = "Cráneo (PC/E)",
-                                    value = globalDiag.pcClassification,
-                                    severity = globalDiag.pcSeverity,
-                                    borderColor = globalBorder.copy(alpha = 0.6f)
+                                    value = when {
+                                        isPcMissing -> "Sin medición"
+                                        isPcPendingValidation -> "Pendiente val."
+                                        state.isAgeDependentEvaluationBlocked -> pendingAgeBadgeLabel
+                                        !globalDiag.pcAvailable -> "No disp."
+                                        else -> globalDiag.pcClassification
+                                    },
+                                    severity = if (!isPcUnregisteredOrInvalid && state.isAgeDependentEvaluationBlocked) {
+                                        ClassificationSeverity.WARNING
+                                    } else {
+                                        globalDiag.pcSeverity
+                                    },
+                                    borderColor = globalBorder.copy(alpha = 0.6f),
+                                    isUnavailable = pcMiniUnavailable
+                                )
+                            }
+
+                            if (!isGlobalUnavailable && !state.isAgeDependentEvaluationBlocked && globalDiag.outOfRangeIndicators.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = "ℹ ${globalDiag.unavailabilityReason}",
+                                    color = SlateText,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.testTag("diagnostico_partial_out_of_range_notice")
                                 )
                             }
                         }
@@ -442,7 +628,18 @@ fun DiagnosticoScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Indicadores Antropométricos (EC ${state.edadEfectivaMeses}\nmeses)",
+                            text = when {
+                                !state.isChronologicalAgeVerifiable ->
+                                    "Indicadores Antropométricos (Edad no verificable)"
+                                state.isBirthMaturityConfirmationPendingInUnder24m ->
+                                    "Indicadores Antropométricos (Condición al nacer\npendiente)"
+                                state.isAgeDependentEvaluationBlocked ->
+                                    "Indicadores Antropométricos (Edad Corregida\nPendiente)"
+                                !state.isOmsAgeRangeAvailable ->
+                                    "Indicadores Antropométricos (${state.edadEfectivaAMD} · >60m sin ref. OMS)"
+                                else ->
+                                    "Indicadores Antropométricos (EC ${state.edadEfectivaMeses}\nmeses)"
+                            },
                             color = DiagNavy,
                             fontSize = 14.sp,
                             lineHeight = 18.sp,
@@ -455,36 +652,123 @@ fun DiagnosticoScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     fun progressForZ(z: Double): Float =
-                        (((z + 3.0) / 6.0).toFloat()).coerceIn(0.18f, 0.92f)
+                        if (!z.isFinite()) 0f else (((z + 3.0) / 6.0).toFloat()).coerceIn(0.18f, 0.92f)
+
+                    val gridPendingBadge = if (state.isBirthMaturityConfirmationPendingInUnder24m) {
+                        "Pendiente cond."
+                    } else {
+                        "Pendiente EC"
+                    }
+                    val gridPendingFooter = if (state.isBirthMaturityConfirmationPendingInUnder24m) {
+                        "Confirme condición al nacer"
+                    } else {
+                        "Confirme EG exacta"
+                    }
 
                     // Row 1 of 2x2 Grid: P/E & T/E
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        val isPeMissing = !state.hasPesoIngresado && !state.isPesoTemporalOrInvalid
+                        val isPePendingValidation = state.isPesoTemporalOrInvalid
+                        val isPeUnregisteredOrInvalid = !state.hasPesoIngresado
+                        val peUnavailable = isPeUnregisteredOrInvalid || (!state.isAgeDependentEvaluationBlocked && !peEval.isReferenceAvailable)
+                        val peMainValue = if (state.hasPesoIngresado && state.effectivePesoKg.isFinite()) {
+                            state.effectivePesoKg.formatDecimal(2)
+                        } else {
+                            "--"
+                        }
                         IndicatorGridCard(
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).testTag("diagnostico_grid_pe_card"),
                             title = "P/E (Peso/Edad)",
-                            badgeText = peEval.shortClassification,
-                            severity = peEval.severity,
-                            mainValue = state.pesoKg.formatDecimal(2),
-                            unit = "kg",
-                            zScoreText = "${state.zScorePE.formatSignedDecimal(1)} DE",
-                            progressFraction = progressForZ(state.zScorePE),
-                            footerLeft = "Rango: ${peEval.normalRangeMin.formatDecimal(1)}-${peEval.normalRangeMax.formatDecimal(1)}",
-                            footerRight = "Med: ${peEval.medianValue.formatDecimal(2)}"
+                            badgeText = when {
+                                isPeMissing -> "Sin medición"
+                                isPePendingValidation -> "Pendiente val."
+                                state.isAgeDependentEvaluationBlocked -> gridPendingBadge
+                                peUnavailable -> "No disp."
+                                else -> peEval.shortClassification
+                            },
+                            severity = if (!isPeUnregisteredOrInvalid && state.isAgeDependentEvaluationBlocked) ClassificationSeverity.WARNING else peEval.severity,
+                            mainValue = peMainValue,
+                            unit = if (isPeUnregisteredOrInvalid) null else "kg",
+                            zScoreText = when {
+                                isPeUnregisteredOrInvalid -> "--"
+                                state.isAgeDependentEvaluationBlocked -> gridPendingBadge
+                                peUnavailable -> "N/D"
+                                else -> "${state.zScorePE.formatSignedDecimal(1)} DE"
+                            },
+                            progressFraction = when {
+                                isPeUnregisteredOrInvalid -> 0f
+                                state.isAgeDependentEvaluationBlocked -> 0.5f
+                                peUnavailable -> 0f
+                                else -> progressForZ(state.zScorePE)
+                            },
+                            footerLeft = when {
+                                isPeMissing -> "Peso no registrado"
+                                isPePendingValidation -> "Entrada pendiente de validación"
+                                state.isAgeDependentEvaluationBlocked -> gridPendingFooter
+                                peUnavailable -> "Ref. OMS 0-60m"
+                                else -> "Rango: ${peEval.normalRangeMin.formatDecimal(1)}-${peEval.normalRangeMax.formatDecimal(1)}"
+                            },
+                            footerRight = when {
+                                isPeMissing -> "Sin medición"
+                                isPePendingValidation -> "Revisar valor"
+                                state.isAgeDependentEvaluationBlocked -> "Pendiente"
+                                peUnavailable -> "Fuera rango"
+                                else -> "Med: ${peEval.medianValue.formatDecimal(2)}"
+                            },
+                            isUnavailable = peUnavailable
                         )
+                        val isTeMissing = !state.hasLongitudIngresada && !state.isLongitudTemporalOrInvalid
+                        val isTePendingValidation = state.isLongitudTemporalOrInvalid
+                        val isTeUnregisteredOrInvalid = !state.hasLongitudIngresada
+                        val teUnavailable = isTeUnregisteredOrInvalid || (!state.isAgeDependentEvaluationBlocked && !teEval.isReferenceAvailable)
+                        val teMainValue = if (state.hasLongitudIngresada && state.effectiveLongitudCm.isFinite()) {
+                            state.effectiveLongitudCm.formatDecimal(1)
+                        } else {
+                            "--"
+                        }
                         IndicatorGridCard(
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).testTag("diagnostico_grid_te_card"),
                             title = "T/E (Talla/Edad)",
-                            badgeText = teEval.shortClassification,
-                            severity = teEval.severity,
-                            mainValue = state.longitudCm.formatDecimal(1),
-                            unit = "cm",
-                            zScoreText = "${state.zScoreTE.formatSignedDecimal(1)} DE",
-                            progressFraction = progressForZ(state.zScoreTE),
-                            footerLeft = "Rango: ${teEval.normalRangeMin.formatDecimal(1)}-${teEval.normalRangeMax.formatDecimal(1)}",
-                            footerRight = "Med: ${teEval.medianValue.formatDecimal(1)}"
+                            badgeText = when {
+                                isTeMissing -> "Sin medición"
+                                isTePendingValidation -> "Pendiente val."
+                                state.isAgeDependentEvaluationBlocked -> gridPendingBadge
+                                teUnavailable -> "No disp."
+                                else -> teEval.shortClassification
+                            },
+                            severity = if (!isTeUnregisteredOrInvalid && state.isAgeDependentEvaluationBlocked) ClassificationSeverity.WARNING else teEval.severity,
+                            mainValue = teMainValue,
+                            unit = if (isTeUnregisteredOrInvalid) null else "cm",
+                            zScoreText = when {
+                                isTeUnregisteredOrInvalid -> "--"
+                                state.isAgeDependentEvaluationBlocked -> gridPendingBadge
+                                teUnavailable -> "N/D"
+                                else -> "${state.zScoreTE.formatSignedDecimal(1)} DE"
+                            },
+                            progressFraction = when {
+                                isTeUnregisteredOrInvalid -> 0f
+                                state.isAgeDependentEvaluationBlocked -> 0.5f
+                                teUnavailable -> 0f
+                                else -> progressForZ(state.zScoreTE)
+                            },
+                            footerLeft = when {
+                                isTeMissing -> "Talla/longitud no registrada"
+                                isTePendingValidation -> "Entrada pendiente de validación"
+                                state.isAgeDependentEvaluationBlocked -> gridPendingFooter
+                                teUnavailable -> "Ref. OMS 0-60m"
+                                else -> "Rango: ${teEval.normalRangeMin.formatDecimal(1)}-${teEval.normalRangeMax.formatDecimal(1)}"
+                            },
+                            footerRight = when {
+                                isTeMissing -> "Sin medición"
+                                isTePendingValidation -> "Revisar valor"
+                                state.isAgeDependentEvaluationBlocked -> "Pendiente"
+                                teUnavailable -> "Fuera rango"
+                                else -> "Med: ${teEval.medianValue.formatDecimal(1)}"
+                            },
+                            isUnavailable = teUnavailable
                         )
                     }
 
@@ -495,54 +779,118 @@ fun DiagnosticoScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        val ptMainVal = if (ptEval.severity == ClassificationSeverity.NORMAL) {
-                            "Proporcional"
-                        } else {
-                            ptEval.shortClassification
+                        val isPtUnregisteredOrInvalid = !state.hasPesoIngresado || !state.hasLongitudIngresada
+                        val isPtPendingValidation = isPtUnregisteredOrInvalid && (state.isPesoTemporalOrInvalid || state.isLongitudTemporalOrInvalid)
+                        val isPtMissing = isPtUnregisteredOrInvalid && !isPtPendingValidation
+                        val ptUnavailable = isPtUnregisteredOrInvalid || (!state.ediHasGestationalContradiction && !ptEval.isReferenceAvailable)
+                        val ptMainVal = when {
+                            isPtUnregisteredOrInvalid -> "--"
+                            ptUnavailable -> "${state.effectiveLongitudCm.formatDecimal(1)} cm"
+                            ptEval.severity == ClassificationSeverity.NORMAL -> "Proporcional"
+                            else -> ptEval.shortClassification
                         }
-                        val ptFooterLeft = if (ptEval.severity == ClassificationSeverity.NORMAL) {
-                            "Descarte Agudo Neg."
-                        } else {
-                            "IMC ${state.imcCalculado.formatDecimal(1)}"
+                        val ptFooterLeft = when {
+                            isPtMissing -> when {
+                                !state.hasPesoIngresado && !state.hasLongitudIngresada -> "Peso y talla no registrados"
+                                !state.hasPesoIngresado -> "Peso no registrado"
+                                else -> "Talla no registrada"
+                            }
+                            isPtPendingValidation -> "Entrada pendiente de validación"
+                            ptUnavailable -> "Ref. 45-110cm · 0-60m"
+                            ptEval.severity == ClassificationSeverity.NORMAL -> "Descarte Agudo Neg."
+                            else -> "IMC ${state.imcCalculado.formatDecimal(1)}"
                         }
-                        val ptFooterRight = if (ptEval.severity == ClassificationSeverity.NORMAL) {
-                            "Armónico"
-                        } else {
-                            "Med: ${ptEval.medianValue.formatDecimal(1)}"
+                        val ptFooterRight = when {
+                            isPtMissing -> "Sin medición"
+                            isPtPendingValidation -> "Revisar valor"
+                            ptUnavailable -> "Fuera rango"
+                            ptEval.severity == ClassificationSeverity.NORMAL -> "Armónico"
+                            else -> "Med: ${ptEval.medianValue.formatDecimal(1)}"
                         }
 
                         IndicatorGridCard(
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).testTag("diagnostico_grid_pt_card"),
                             title = "P/T (Peso/Talla)",
-                            badgeText = ptEval.shortClassification,
-                            severity = ptEval.severity,
+                            badgeText = when {
+                                isPtMissing -> "Sin medición"
+                                isPtPendingValidation -> "Pendiente val."
+                                state.ediHasGestationalContradiction -> "Confirmar EG"
+                                ptUnavailable -> "No disp."
+                                else -> ptEval.shortClassification
+                            },
+                            severity = if (!isPtUnregisteredOrInvalid && state.ediHasGestationalContradiction) ClassificationSeverity.WARNING else ptEval.severity,
                             mainValue = ptMainVal,
                             unit = null,
-                            zScoreText = "${state.zScorePT.formatSignedDecimal(1)} DE",
-                            progressFraction = progressForZ(state.zScorePT),
+                            zScoreText = when {
+                                isPtUnregisteredOrInvalid -> "--"
+                                state.ediHasGestationalContradiction -> "Confirmar EG"
+                                ptUnavailable -> "N/D"
+                                else -> "${state.zScorePT.formatSignedDecimal(1)} DE"
+                            },
+                            progressFraction = if (ptUnavailable) 0f else progressForZ(state.zScorePT),
                             footerLeft = ptFooterLeft,
-                            footerRight = ptFooterRight
+                            footerRight = ptFooterRight,
+                            isUnavailable = ptUnavailable
                         )
-                        val pcFooterLeft = if (globalDiag.pcSeverity == ClassificationSeverity.NORMAL) {
-                            "Fontanela normotensa"
+                        val isPcMissing = !state.hasPerimetroCefalicoIngresado && !state.isPerimetroCefalicoTemporalOrInvalid
+                        val isPcPendingValidation = state.isPerimetroCefalicoTemporalOrInvalid
+                        val isPcUnregisteredOrInvalid = !state.hasPerimetroCefalicoIngresado
+                        val pcUnavailable = isPcUnregisteredOrInvalid || (!state.isAgeDependentEvaluationBlocked && !globalDiag.pcAvailable)
+                        val pcMainValue = if (state.hasPerimetroCefalicoIngresado && state.effectivePerimetroCefalicoCm.isFinite()) {
+                            state.effectivePerimetroCefalicoCm.formatDecimal(1)
                         } else {
-                            "Rango: ${state.evalPCE.normalRangeMin.formatDecimal(1)}-${state.evalPCE.normalRangeMax.formatDecimal(1)}"
+                            "--"
                         }
-                        val pcFooterRight = globalDiag.pcPercentileText
-                            .replace("Percentil\n", "P")
-                            .replace("Percentil ", "P")
+                        val pcFooterLeft = when {
+                            isPcMissing -> "Perímetro cefálico no registrado"
+                            isPcPendingValidation -> "Entrada pendiente de validación"
+                            state.isAgeDependentEvaluationBlocked -> gridPendingFooter
+                            pcUnavailable -> "PC/E no disponible por rango de referencia"
+                            globalDiag.pcSeverity == ClassificationSeverity.NORMAL -> "Fontanela normotensa"
+                            else -> "Rango: ${state.evalPCE.normalRangeMin.formatDecimal(1)}-${state.evalPCE.normalRangeMax.formatDecimal(1)}"
+                        }
+                        val pcFooterRight = when {
+                            isPcMissing -> "Sin medición"
+                            isPcPendingValidation -> "Revisar valor"
+                            state.isAgeDependentEvaluationBlocked -> "Pendiente"
+                            pcUnavailable -> "Fuera rango"
+                            else -> globalDiag.pcPercentileText
+                                .replace("Percentil\n", "P")
+                                .replace("Percentil ", "P")
+                        }
 
                         IndicatorGridCard(
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(1f).testTag("diagnostico_grid_pce_card"),
                             title = "PC/E\n(Cefálico)",
-                            badgeText = globalDiag.pcClassification,
-                            severity = globalDiag.pcSeverity,
-                            mainValue = state.perimetroCefalicoCm.formatDecimal(1),
-                            unit = "cm",
-                            zScoreText = "${state.zScorePC.formatSignedDecimal(1)} DE",
-                            progressFraction = progressForZ(state.zScorePC),
+                            badgeText = when {
+                                isPcMissing -> "Sin medición"
+                                isPcPendingValidation -> "Pendiente val."
+                                state.isAgeDependentEvaluationBlocked -> gridPendingBadge
+                                pcUnavailable -> "No disp."
+                                else -> globalDiag.pcClassification
+                            },
+                            severity = if (!isPcUnregisteredOrInvalid && state.isAgeDependentEvaluationBlocked) {
+                                ClassificationSeverity.WARNING
+                            } else {
+                                globalDiag.pcSeverity
+                            },
+                            mainValue = pcMainValue,
+                            unit = if (isPcUnregisteredOrInvalid) null else "cm",
+                            zScoreText = when {
+                                isPcUnregisteredOrInvalid -> "--"
+                                state.isAgeDependentEvaluationBlocked -> gridPendingBadge
+                                pcUnavailable -> "N/D"
+                                else -> "${state.zScorePC.formatSignedDecimal(1)} DE"
+                            },
+                            progressFraction = when {
+                                isPcUnregisteredOrInvalid -> 0f
+                                state.isAgeDependentEvaluationBlocked -> 0.5f
+                                pcUnavailable -> 0f
+                                else -> progressForZ(state.zScorePC)
+                            },
                             footerLeft = pcFooterLeft,
-                            footerRight = pcFooterRight
+                            footerRight = pcFooterRight,
+                            isUnavailable = pcUnavailable
                         )
                     }
                 }
@@ -558,10 +906,21 @@ fun DiagnosticoScreen(
                 shadowElevation = 1.dp
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    val (gainPillBg, gainPillText, gainPillBorder) = when (globalDiag.gananciaSeverity) {
-                        ClassificationSeverity.NORMAL -> Triple(SoftGreenPill, DarkGreenPill, BorderSoftGreen)
-                        ClassificationSeverity.WARNING -> Triple(SoftAmberPill, WarningText, BorderAmber)
-                        ClassificationSeverity.SEVERE -> Triple(SoftRedBg, DarkRedText, BorderSoftRed)
+                    val isVelocityUnavailable = !state.isAgeDependentEvaluationBlocked &&
+                        (isGlobalUnavailable || !globalDiag.pesoPrevioEstimadoKg.isFinite())
+                    val effectiveGainSeverity = if (state.isAgeDependentEvaluationBlocked) {
+                        ClassificationSeverity.WARNING
+                    } else {
+                        globalDiag.gananciaSeverity
+                    }
+                    val (gainPillBg, gainPillText, gainPillBorder) = if (isVelocityUnavailable) {
+                        Triple(SoftGrayBg, SlateText, BorderSubtleGray)
+                    } else {
+                        when (effectiveGainSeverity) {
+                            ClassificationSeverity.NORMAL -> Triple(SoftGreenPill, DarkGreenPill, BorderSoftGreen)
+                            ClassificationSeverity.WARNING -> Triple(SoftAmberPill, WarningText, BorderAmber)
+                            ClassificationSeverity.SEVERE -> Triple(SoftRedBg, DarkRedText, BorderSoftRed)
+                        }
                     }
 
                     Row(
@@ -574,7 +933,11 @@ fun DiagnosticoScreen(
                             modifier = Modifier.weight(1f)
                         ) {
                             TrendUpIcon(
-                                tint = ClinicalGreen,
+                                tint = if (isVelocityUnavailable) SlateText else when (effectiveGainSeverity) {
+                                    ClassificationSeverity.NORMAL -> ClinicalGreen
+                                    ClassificationSeverity.WARNING -> WarningAmber
+                                    ClassificationSeverity.SEVERE -> AlertRed
+                                },
                                 modifier = Modifier.size(18.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -594,7 +957,11 @@ fun DiagnosticoScreen(
                             color = gainPillBg,
                             border = BorderStroke(1.dp, gainPillBorder)
                         ) {
-                            val formattedGain = String.format(Locale.US, "+%,d\ng/mes", globalDiag.gananciaGramosMes)
+                            val formattedGain = when {
+                                state.isAgeDependentEvaluationBlocked -> "Pendiente\nEC"
+                                isVelocityUnavailable -> "No disp."
+                                else -> String.format(Locale.US, "+%,d\ng/mes", globalDiag.gananciaGramosMes)
+                            }
                             Text(
                                 text = formattedGain,
                                 color = gainPillText,
@@ -625,30 +992,78 @@ fun DiagnosticoScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     text = buildAnnotatedString {
-                                        withStyle(
-                                            SpanStyle(
-                                                color = DiagNavy,
-                                                fontSize = 12.5.sp,
-                                                fontWeight = FontWeight.ExtraBold
-                                            )
-                                        ) {
-                                            append("Ganancia: +${globalDiag.gananciaGramosDia} g/día ")
-                                        }
-                                        withStyle(
-                                            SpanStyle(
-                                                color = MutedText,
-                                                fontSize = 11.5.sp,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        ) {
-                                            append("(${globalDiag.pesoPrevioEstimadoKg.formatDecimal(2)} → ${state.pesoKg.formatDecimal(2)} kg)")
+                                        if (state.isAgeDependentEvaluationBlocked) {
+                                            withStyle(
+                                                SpanStyle(
+                                                    color = WarningText,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.ExtraBold
+                                                )
+                                            ) {
+                                                append("Próximo control pendiente de Edad Corregida")
+                                            }
+                                        } else if (isVelocityUnavailable) {
+                                            withStyle(
+                                                SpanStyle(
+                                                    color = SlateText,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.ExtraBold
+                                                )
+                                            ) {
+                                                append(
+                                                    when {
+                                                        !state.hasPesoIngresado && state.isOmsAgeRangeAvailable ->
+                                                            "Velocidad ponderal sin medición de peso"
+                                                        isGlobalUnavailable ->
+                                                            "Velocidad ponderal no disponible por rango OMS"
+                                                        else ->
+                                                            "Velocidad ponderal no disponible sin P/E válido"
+                                                    }
+                                                )
+                                            }
+                                        } else {
+                                            withStyle(
+                                                SpanStyle(
+                                                    color = DiagNavy,
+                                                    fontSize = 12.5.sp,
+                                                    fontWeight = FontWeight.ExtraBold
+                                                )
+                                            ) {
+                                                append("Ganancia: +${globalDiag.gananciaGramosDia} g/día ")
+                                            }
+                                            withStyle(
+                                                SpanStyle(
+                                                    color = MutedText,
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            ) {
+                                                append("(${globalDiag.pesoPrevioEstimadoKg.formatDecimal(2)} → ${state.effectivePesoKg.formatDecimal(2)} kg)")
+                                            }
                                         }
                                     }
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 val ecSuffix = if (state.esPrematuro && state.edadCronologicaMeses < 24) " EC" else ""
                                 Text(
-                                    text = "Mínimo esperado en ${state.edadEfectivaMeses}° mes$ecSuffix: >${globalDiag.minimoGramosMesEsperado} g/mes\n(${globalDiag.minimoGramosDiaEsperado} g/día)",
+                                    text = when {
+                                        state.isAgeDependentEvaluationBlocked ->
+                                            "Confirme las semanas y días de gestación para calcular la meta mensual y fecha del próximo control"
+                                        !state.hasPesoIngresado && state.isOmsAgeRangeAvailable ->
+                                            "Se requiere peso válido para estimar velocidad ponderal"
+                                        isGlobalUnavailable ->
+                                            "Las metas de ganancia OMS implementadas cubren de 0m 0d a 60m 0d (edad actual: ${state.edadEfectivaAMD})"
+                                        isVelocityUnavailable ->
+                                            "Se requiere peso válido para estimar velocidad ponderal"
+                                        else -> {
+                                            val baseMeta = "Mínimo esperado en ${state.edadEfectivaMeses}° mes$ecSuffix: >${globalDiag.minimoGramosMesEsperado} g/mes\n(${globalDiag.minimoGramosDiaEsperado} g/día)"
+                                            if (isGlobalPartial) {
+                                                "$baseMeta\n${globalDiag.gananciaStatusTitle}"
+                                            } else {
+                                                baseMeta
+                                            }
+                                        }
+                                    },
                                     color = MutedText,
                                     fontSize = 11.sp,
                                     lineHeight = 15.sp,
@@ -667,10 +1082,14 @@ fun DiagnosticoScreen(
 
                             Spacer(modifier = Modifier.width(8.dp))
 
-                            val catchUpTextColor = when (globalDiag.gananciaSeverity) {
-                                ClassificationSeverity.NORMAL -> ClinicalGreen
-                                ClassificationSeverity.WARNING -> WarningText
-                                ClassificationSeverity.SEVERE -> DarkRedText
+                            val catchUpTextColor = if (isVelocityUnavailable) {
+                                SlateText
+                            } else {
+                                when (effectiveGainSeverity) {
+                                    ClassificationSeverity.NORMAL -> ClinicalGreen
+                                    ClassificationSeverity.WARNING -> WarningText
+                                    ClassificationSeverity.SEVERE -> DarkRedText
+                                }
                             }
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
@@ -678,12 +1097,18 @@ fun DiagnosticoScreen(
                                 border = BorderStroke(1.dp, Color(0xFFE2E8F0))
                             ) {
                                 Text(
-                                    text = globalDiag.catchUpBadgeText,
+                                    text = if (state.isAgeDependentEvaluationBlocked) {
+                                        "Pendiente\nEC"
+                                    } else {
+                                        globalDiag.catchUpBadgeText
+                                    },
                                     color = catchUpTextColor,
                                     fontSize = 11.sp,
                                     lineHeight = 14.sp,
                                     fontWeight = FontWeight.ExtraBold,
-                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                    modifier = Modifier
+                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                        .testTag("diagnostico_velocity_badge")
                                 )
                             }
                         }
@@ -733,9 +1158,17 @@ fun DiagnosticoScreen(
                                 fontSize = 15.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
-                            val ediAgeModeLabel = if (state.esPrematuro && state.edadCronologicaMeses < 24) "Corregidos" else "Cumplidos"
+                            val ediAgeModeLabel = when {
+                                state.isCorrectedAgePending -> "Edad Corregida Pendiente"
+                                state.usaEdadCorregida -> "Corregidos"
+                                else -> "Cumplidos"
+                            }
                             Text(
-                                text = "Test Peruano · Batería ${state.edadEfectivaMeses} Meses\n$ediAgeModeLabel",
+                                text = if (state.isCorrectedAgePending) {
+                                    "Test Peruano · $ediAgeModeLabel"
+                                } else {
+                                    "Test Peruano · Batería ${state.edadEfectivaMeses} Meses\n$ediAgeModeLabel"
+                                },
                                 color = Color.White.copy(alpha = 0.78f),
                                 fontSize = 11.sp,
                                 lineHeight = 13.5.sp,
@@ -772,12 +1205,17 @@ private fun DictamenMiniStatusCard(
     label: String,
     value: String,
     severity: ClassificationSeverity,
-    borderColor: Color
+    borderColor: Color,
+    isUnavailable: Boolean = false
 ) {
-    val valColor = when (severity) {
-        ClassificationSeverity.NORMAL -> ClinicalGreen
-        ClassificationSeverity.WARNING -> WarningText
-        ClassificationSeverity.SEVERE -> AlertRed
+    val valColor = if (isUnavailable) {
+        SlateText
+    } else {
+        when (severity) {
+            ClassificationSeverity.NORMAL -> ClinicalGreen
+            ClassificationSeverity.WARNING -> WarningText
+            ClassificationSeverity.SEVERE -> AlertRed
+        }
     }
 
     Surface(
@@ -825,18 +1263,27 @@ private fun IndicatorGridCard(
     zScoreText: String,
     progressFraction: Float,
     footerLeft: String,
-    footerRight: String
+    footerRight: String,
+    isUnavailable: Boolean = false
 ) {
-    val (badgeBg, badgeTextCol, badgeBorder) = when (severity) {
-        ClassificationSeverity.NORMAL -> Triple(SoftGreenPill, DarkGreenPill, BorderSoftGreen)
-        ClassificationSeverity.WARNING -> Triple(SoftAmberPill, WarningText, BorderAmber)
-        ClassificationSeverity.SEVERE -> Triple(SoftRedBg, DarkRedText, BorderSoftRed)
+    val (badgeBg, badgeTextCol, badgeBorder) = if (isUnavailable) {
+        Triple(SoftGrayBg, SlateText, BorderSubtleGray)
+    } else {
+        when (severity) {
+            ClassificationSeverity.NORMAL -> Triple(SoftGreenPill, DarkGreenPill, BorderSoftGreen)
+            ClassificationSeverity.WARNING -> Triple(SoftAmberPill, WarningText, BorderAmber)
+            ClassificationSeverity.SEVERE -> Triple(SoftRedBg, DarkRedText, BorderSoftRed)
+        }
     }
 
-    val barColor = when (severity) {
-        ClassificationSeverity.NORMAL -> ClinicalGreen
-        ClassificationSeverity.WARNING -> WarningAmber
-        ClassificationSeverity.SEVERE -> AlertRed
+    val barColor = if (isUnavailable) {
+        SlateText
+    } else {
+        when (severity) {
+            ClassificationSeverity.NORMAL -> ClinicalGreen
+            ClassificationSeverity.WARNING -> WarningAmber
+            ClassificationSeverity.SEVERE -> AlertRed
+        }
     }
 
     Surface(

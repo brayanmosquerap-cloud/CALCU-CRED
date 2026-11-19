@@ -18,6 +18,7 @@ import androidx.core.content.FileProvider
 import com.example.model.ClinicalAgeCalculator
 import com.example.model.CredEdiUiState
 import com.example.model.EdiAreaColorResult
+import com.example.model.EdiBirthMaturityCondition
 import com.example.model.EdiDevArea
 import com.example.model.EdiGlobalEvaluationResult
 import com.example.model.EdiGlobalTrafficLight
@@ -253,19 +254,34 @@ object EdiPdfExporter {
             canvas.drawText("--", 264f, 446f, compactInkPaint)
         }
 
-        // B) Edad Gestacional en Semanas y Días (sin redondeos ni valores engañosos en niños a término)
-        val gaSheetLabel = when {
-            state.esPrematuro -> state.ediGestationalAgeInput.originalLabel
-            state.egSemanas >= 37 -> state.ediGestationalAgeInput.originalLabel
-            else -> "≥37 sem"
+        // B) Edad Gestacional en Semanas y Días (coherente con registro real, sin inventar ni mostrar A término < 37s)
+        val gaBoxLines = buildPage1GestationalAgeLines(state)
+        val gaPrimaryPaint = Paint(inkTextPaint).apply {
+            color = when {
+                state.ediHasGestationalContradiction -> CLINICAL_RED_INK
+                !state.ediHasRegisteredEg && state.ediEffectiveMaturityCondition == EdiBirthMaturityCondition.UNSPECIFIED -> CLINICAL_SLATE_INK
+                else -> CLINICAL_BLUE_INK
+            }
+            textSize = when {
+                state.ediHasRegisteredEg && !state.ediHasGestationalContradiction -> 22f
+                gaBoxLines.size >= 3 -> 16.5f
+                else -> 15.5f
+            }
         }
-        canvas.drawText(gaSheetLabel, 200f, 558f, inkTextPaint)
-        canvas.drawText(
-            if (state.esPrematuro) "(Prematuro)" else "(A término)",
-            200f,
-            590f,
-            tinyInkPaint
-        )
+        val gaSecondaryPaint = Paint(tinyInkPaint).apply {
+            color = gaPrimaryPaint.color
+            textSize = if (gaBoxLines.size >= 3) 12f else 13f
+        }
+        if (gaBoxLines.size >= 3) {
+            canvas.drawText(gaBoxLines[0], 200f, 543f, gaPrimaryPaint)
+            canvas.drawText(gaBoxLines[1], 200f, 567f, gaSecondaryPaint)
+            canvas.drawText(gaBoxLines[2], 200f, 588f, gaSecondaryPaint)
+        } else {
+            canvas.drawText(gaBoxLines.getOrElse(0) { "" }, 200f, 556f, gaPrimaryPaint)
+            if (gaBoxLines.size > 1) {
+                canvas.drawText(gaBoxLines[1], 200f, 588f, gaSecondaryPaint)
+            }
+        }
 
         // C) Fecha de Evaluación Inicial (alineada entre las barras preimpresas "/")
         val parsedEval = ClinicalAgeCalculator.parseDate(state.fechaEvaluacion)
@@ -290,7 +306,13 @@ object EdiPdfExporter {
         }
 
         // E) Edad Corregida (Inicial)
-        if (state.ediHasFechaNacimientoValida && state.usaEdadCorregida) {
+        if (state.ediHasFechaNacimientoValida && state.isCorrectedAgePending) {
+            canvas.drawText("-", 418f, 596f, compactInkPaint)
+            canvas.drawText("Pend. EG", 408f, 646f, compactInkPaint)
+        } else if (state.ediHasFechaNacimientoValida && state.isBirthMaturityConfirmationPendingInUnder24m) {
+            canvas.drawText("-", 418f, 596f, compactInkPaint)
+            canvas.drawText("Pend. cond.", 408f, 646f, compactInkPaint)
+        } else if (state.ediHasFechaNacimientoValida && state.usaEdadCorregida) {
             canvas.drawText(state.edadCorregidaAnios.toString(), 418f, 596f, inkTextPaint)
             canvas.drawText(
                 "${state.edadCorregidaMesesRestantes}m ${state.edadCorregidaDias}d",
@@ -441,9 +463,10 @@ object EdiPdfExporter {
             canvas.drawText("NO APLICA", 392f, 1796f, naEnPaint)
         }
 
-        // Perímetro cefálico (solo si fue ingresado por el usuario)
-        if (state.hasPerimetroCefalicoIngresado) {
-            val pcText = String.format(Locale.US, "%.1f", state.perimetroCefalicoCm)
+        // Perímetro cefálico (solo si fue ingresado explícitamente por el usuario)
+        val registeredPc = parseRegisteredPerimetroCefalico(state)
+        if (registeredPc != null) {
+            val pcText = String.format(Locale.US, "%.1f", registeredPc)
             drawVerticalText(canvas, pcText, EN_PC_CENTER_X, EN_PC_CENTER_Y, Paint(compactInkPaint).apply {
                 textSize = 16.5f
             })
@@ -596,10 +619,12 @@ object EdiPdfExporter {
         val label = if (isDraft) {
             val prioritySuffix = if (globalEval.hasPriorityCriticalWarning) {
                 " · ⚠ ADVERTENCIA CLÍNICA PRIORITARIA (${globalEval.priorityCriticalAlerts.size}) — VER ANEXO"
+            } else if (!state.isChronologicalAgeVerifiable) {
+                " · EDAD NO VERIFICABLE: REGISTRAR FECHAS VÁLIDAS"
             } else {
                 " · VER PENDIENTES EN ANEXO PÁG. 2"
             }
-            "BORRADOR — EVALUACIÓN INCOMPLETA (NO DEFINITIVA) · ${state.ediActiveGroupSpec.code}$prioritySuffix"
+            "BORRADOR / EVALUACIÓN INCOMPLETA (NO DEFINITIVA) · ${state.ediActiveGroupSpec.code}$prioritySuffix"
         } else {
             "FICHA OFICIAL EDI PERUANO 2026 · ${state.ediActiveGroupSpec.code} (${state.ediActiveGroupSpec.shortIntervalLabel}) · DICTAMEN: ${globalEval.trafficLight.displayLabel.uppercase()}"
         }
@@ -612,6 +637,133 @@ object EdiPdfExporter {
             textAlign = Paint.Align.CENTER
         }
         canvas.drawText(label, 912f, 39f, ribbonPaint)
+    }
+
+    private fun parseRegisteredInput(raw: String, minBound: Double, maxBound: Double): Double? {
+        val parsed = raw.trim().replace(',', '.').toDoubleOrNull() ?: return null
+        if (!parsed.isFinite() || parsed <= 0.0) return null
+        return parsed.coerceIn(minBound, maxBound)
+    }
+
+    private fun parseRegisteredPesoKg(state: CredEdiUiState): Double? =
+        if (state.hasPesoIngresado) parseRegisteredInput(state.pesoInput, 0.50, 40.00) else null
+
+    private fun parseRegisteredLongitudCm(state: CredEdiUiState): Double? =
+        if (state.hasLongitudIngresada) parseRegisteredInput(state.longitudInput, 30.0, 130.0) else null
+
+    private fun parseRegisteredPerimetroCefalico(state: CredEdiUiState): Double? =
+        if (state.hasPerimetroCefalicoIngresado) parseRegisteredInput(state.perimetroCefalicoInput, 20.0, 65.0) else null
+
+    internal fun buildPage1GestationalAgeLines(state: CredEdiUiState): List<String> = when {
+        state.ediHasGestationalContradiction && state.ediHasRegisteredEg -> listOf(
+            "⚠ ${state.egSemanas}s ${state.egDias}d",
+            "Contradicción:",
+            "Confirmar EG"
+        )
+        state.ediHasGestationalContradiction -> listOf(
+            "⚠ Conflicto EG",
+            "Confirmar dato"
+        )
+        state.ediHasRegisteredEg -> listOf(
+            "${state.egSemanas}s ${state.egDias}d",
+            if (state.egSemanas < 37) "(Pretérmino)" else "(A término)"
+        )
+        state.ediEffectiveMaturityCondition == EdiBirthMaturityCondition.CONFIRMED_TERM -> listOf(
+            "A término",
+            "semanas exactas",
+            "no registradas"
+        )
+        state.ediEffectiveMaturityCondition == EdiBirthMaturityCondition.CONFIRMED_PRETERM -> listOf(
+            "Pretérmino conf.",
+            "EG exacta",
+            "no registrada"
+        )
+        else -> listOf(
+            "EG no registrada",
+            "(Sin confirmación)"
+        )
+    }
+
+    internal fun buildPage2GestationalAgeDetail(state: CredEdiUiState): String = when {
+        state.ediHasGestationalContradiction ->
+            "Edad Gestacional: ${state.ediGestationalAgeDisplay}"
+        state.ediHasRegisteredEg && state.egSemanas < 37 ->
+            "Edad Gestacional: Pretérmino · ${state.egSemanas}s ${state.egDias}d (${state.ediGestationalAgeInput.formulaDocumentation})"
+        state.ediHasRegisteredEg ->
+            "Edad Gestacional: A término · ${state.egSemanas}s ${state.egDias}d (no aplica corrección por prematuridad)"
+        state.ediEffectiveMaturityCondition == EdiBirthMaturityCondition.CONFIRMED_TERM ->
+            "Edad Gestacional: A término — semanas exactas no registradas (no aplica corrección por prematuridad)"
+        state.ediEffectiveMaturityCondition == EdiBirthMaturityCondition.CONFIRMED_PRETERM ->
+            "Edad Gestacional: Pretérmino confirmado — EG exacta no registrada"
+        else ->
+            "Edad Gestacional: EG no registrada (condición al nacer no especificada)"
+    }
+
+    internal fun buildPage2AgeVerificationSummary(state: CredEdiUiState): String =
+        if (!state.isChronologicalAgeVerifiable) {
+            "BORRADOR / EVALUACIÓN INCOMPLETA — ${state.ediUnverifiableAgeReason}"
+        } else {
+            "Edad verificable: ${state.edadCronologicaAMD} (${state.edadCronologicaMeses}m ${state.edadCronologicaDias}d)"
+        }
+
+    internal fun buildCredFooterSummary(state: CredEdiUiState): String {
+        val pesoValido = parseRegisteredPesoKg(state)
+        val tallaValida = parseRegisteredLongitudCm(state)
+        val pcValido = parseRegisteredPerimetroCefalico(state)
+
+        if (pesoValido == null && tallaValida == null && pcValido == null) {
+            val ageNotice = if (!state.isChronologicalAgeVerifiable) {
+                " | Edad no verificable: registrar fechas válidas"
+            } else ""
+            return "CRED NTS 238 · Sexo: ${state.sexo.label} | EG: ${state.ediGestationalAgeDisplay}$ageNotice | Ver Anexo de Trazabilidad en Página 2"
+        }
+
+        val parsedBirth = ClinicalAgeCalculator.parseDate(state.fechaNacimiento)
+        val parsedEval = ClinicalAgeCalculator.parseDate(state.fechaEvaluacion)
+        val hasValidAgeForDiagnosis = !state.isAgeDependentEvaluationBlocked &&
+            parsedBirth != null &&
+            parsedEval != null &&
+            !java.time.LocalDate.of(parsedEval.year, parsedEval.month, parsedEval.day)
+                .isBefore(java.time.LocalDate.of(parsedBirth.year, parsedBirth.month, parsedBirth.day))
+
+        val segments = mutableListOf("Sexo: ${state.sexo.label}")
+
+        if (pesoValido != null) {
+            val pesoText = String.format(Locale.US, "%.2f kg", pesoValido)
+            val canShowPeDiagnosis = hasValidAgeForDiagnosis &&
+                state.evalPE.isReferenceAvailable &&
+                kotlin.math.abs(state.pesoKg - pesoValido) < 0.01
+            segments.add(
+                if (canShowPeDiagnosis) "Peso: $pesoText (${state.evalPE.shortClassification})"
+                else "Peso: $pesoText"
+            )
+        }
+
+        if (tallaValida != null) {
+            val tallaText = String.format(Locale.US, "%.1f cm", tallaValida)
+            val canShowTeDiagnosis = hasValidAgeForDiagnosis &&
+                state.evalTE.isReferenceAvailable &&
+                kotlin.math.abs(state.longitudCm - tallaValida) < 0.05
+            segments.add(
+                if (canShowTeDiagnosis) "Talla: $tallaText (${state.evalTE.shortClassification})"
+                else "Talla: $tallaText"
+            )
+        }
+
+        if (pcValido != null) {
+            segments.add(String.format(Locale.US, "PC: %.1f cm", pcValido))
+        }
+
+        if (!state.isChronologicalAgeVerifiable) {
+            segments.add("Edad no verificable: registrar fechas válidas")
+        } else if (hasValidAgeForDiagnosis &&
+            ((pesoValido != null && !state.evalPE.isReferenceAvailable) ||
+                (tallaValida != null && !state.evalTE.isReferenceAvailable))
+        ) {
+            segments.add("Clasif. OMS: No disponible · ref. OMS 0-60m")
+        }
+
+        return "CRED NTS 238 · ${segments.joinToString(" | ")}"
     }
 
     private fun drawBottomSummaryMargin(
@@ -627,44 +779,34 @@ object EdiPdfExporter {
             typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
             textAlign = Paint.Align.LEFT
         }
-        val statusText = if (isDraft) {
-            "BORRADOR INCOMPLETO · Faltan ${globalEval.pendingMandatoryItemCodes.size + globalEval.missingMaterialItemCodes.size + globalEval.discrepancyItemCodes.size} ítem(s)/control(es)"
-        } else {
-            "DICTAMEN EDI 2026: ${globalEval.trafficLight.displayLabel}"
+        val statusText = when {
+            isDraft && !state.isChronologicalAgeVerifiable ->
+                "BORRADOR / EVALUACIÓN INCOMPLETA · Edad no verificable: registrar fechas válidas"
+            isDraft ->
+                "BORRADOR INCOMPLETO · Faltan ${globalEval.pendingMandatoryItemCodes.size + globalEval.missingMaterialItemCodes.size + globalEval.discrepancyItemCodes.size} ítem(s)/control(es)"
+            else ->
+                "DICTAMEN EDI 2026: ${globalEval.trafficLight.displayLabel}"
         }
-        val credSummary = if (state.datosAntropometricosCount > 0) {
-            String.format(
-                Locale.US,
-                "CRED NTS 238 · Sexo: %s | Peso: %.2f kg (%s) | Talla: %.1f cm (%s) | PC: %.1f cm",
-                state.sexo.label,
-                state.pesoKg,
-                state.evalPE.shortClassification,
-                state.longitudCm,
-                state.evalTE.shortClassification,
-                state.perimetroCefalicoCm
-            )
-        } else {
-            val gaFooter = if (state.esPrematuro || state.egSemanas >= 37) {
-                state.ediGestationalAgeInput.originalLabel
-            } else {
-                "A término (≥37 sem)"
-            }
-            "CRED NTS 238 · Sexo: ${state.sexo.label} | EG: $gaFooter | Ver Anexo de Trazabilidad en Página 2"
-        }
+        val credSummary = buildCredFooterSummary(state)
         canvas.drawText(
             "$statusText · ${state.ediActiveGroupSpec.code} (${state.ediActiveGroupSpec.officialTitle})",
             100f,
             2313f,
             footerPaint
         )
+        val credSummaryPaint = Paint(footerPaint).apply {
+            color = CLINICAL_SLATE_INK
+            textSize = 17f
+        }
+        val maxSummaryWidth = PAGE_WIDTH - 200f
+        if (credSummaryPaint.measureText(credSummary) > maxSummaryWidth) {
+            credSummaryPaint.textSize = 15f
+        }
         canvas.drawText(
             credSummary,
             100f,
             2336f,
-            Paint(footerPaint).apply {
-                color = CLINICAL_SLATE_INK
-                textSize = 17f
-            }
+            credSummaryPaint
         )
     }
 
@@ -793,7 +935,7 @@ object EdiPdfExporter {
                 Triple(SOFT_GREEN_FILL, CLINICAL_GREEN_INK, CLINICAL_GREEN_INK)
         }
         val headerTitle = if (isDraft) {
-            "BORRADOR — EVALUACIÓN INCOMPLETA (NO VÁLIDO COMO DICTAMEN DEFINITIVO)"
+            "BORRADOR / EVALUACIÓN INCOMPLETA (NO VÁLIDO COMO DICTAMEN DEFINITIVO)"
         } else {
             "ANEXO DE TRAZABILIDAD CLÍNICA · FICHA OFICIAL EDI PERUANO 2026"
         }
@@ -866,24 +1008,44 @@ object EdiPdfExporter {
         ageLines.add(
             "Fecha Nacimiento: ${state.fechaNacimiento.ifBlank { "No ingresada" }}  |  Fecha Evaluación: ${state.fechaEvaluacion}  |  Sexo: ${state.sexo.label}" to CLINICAL_DARK_INK
         )
-        val gaDetailText = when {
-            state.esPrematuro -> "${state.ediGestationalAgeInput.originalLabel} (${state.ediGestationalAgeInput.formulaDocumentation})"
-            state.egSemanas >= 37 -> "${state.ediGestationalAgeInput.originalLabel} (A término ≥37 semanas; no aplica corrección por prematuridad)"
-            else -> "A término (≥37 semanas; no aplica corrección por prematuridad)"
+        if (!state.isChronologicalAgeVerifiable) {
+            ageLines.add(
+                "⚠ ${buildPage2AgeVerificationSummary(state)}" to CLINICAL_RED_INK
+            )
         }
+        val gaDetailText = buildPage2GestationalAgeDetail(state)
         ageLines.add(
-            "Edad Gestacional: $gaDetailText" to CLINICAL_DARK_INK
+            gaDetailText to if (state.ediHasGestationalContradiction) CLINICAL_RED_INK else CLINICAL_DARK_INK
         )
+        if (state.ediHasGestationalContradiction) {
+            ageLines.add(
+                "⚠ ${state.ediGestationalContradictionMessage}" to CLINICAL_RED_INK
+            )
+        }
         val cronoStr = if (state.ediHasFechaNacimientoValida) {
             "${state.edadCronologicaAMD} (${state.edadCronologicaMeses}m ${state.edadCronologicaDias}d)"
-        } else "No calculada"
-        val corrStr = if (state.ediHasFechaNacimientoValida && state.usaEdadCorregida) {
-            "${state.edadCorregidaAMD} (${state.edadCorregidaMeses}m ${state.edadCorregidaDias}d)"
-        } else "No aplica"
+        } else "Edad no verificable: registrar fechas válidas"
+        val corrStr = when {
+            !state.ediHasFechaNacimientoValida -> "Edad no verificable: registrar fechas válidas"
+            state.isCorrectedAgePending -> "EDAD CORREGIDA PENDIENTE (registre EG exacta)"
+            state.isBirthMaturityConfirmationPendingInUnder24m -> "PENDIENTE DE CONFIRMAR CONDICIÓN AL NACER (< 24 meses)"
+            state.usaEdadCorregida -> "${state.edadCorregidaAMD} (${state.edadCorregidaMeses}m ${state.edadCorregidaDias}d)"
+            else -> "No aplica"
+        }
         ageLines.add("Edad Cronológica (CRED): $cronoStr  |  Edad Corregida: $corrStr" to CLINICAL_DARK_INK)
         if (state.ediHasFechaNacimientoValida) {
+            val compMsg = when {
+                state.ediHasGestationalContradiction ->
+                    "Bloqueada — Contradicción entre condición de prematuridad y edad gestacional registrada."
+                state.isCorrectedAgePending ->
+                    "Bloqueada — Pretérmino confirmado (< 24 meses) sin EG exacta registrada (EDAD CORREGIDA PENDIENTE)."
+                state.isBirthMaturityConfirmationPendingInUnder24m ->
+                    "Bloqueada — Paciente menor de 24 meses con condición al nacer no especificada (UNSPECIFIED). Confirme si nació a término o prematuro."
+                else ->
+                    state.ediCorrectedAgeComparison.clinicalReviewMessage
+            }
             ageLines.add(
-                "Comparación Manual EDI vs Calendario CRED: ${state.ediCorrectedAgeComparison.clinicalReviewMessage}" to CLINICAL_SLATE_INK
+                "Comparación Manual EDI vs Calendario CRED: $compMsg" to CLINICAL_SLATE_INK
             )
         }
         state.ediAgeDiscrepancyResolution?.takeIf { state.ediIsDiscrepancyResolvedForCurrentInputs }?.let { res ->

@@ -1,0 +1,910 @@
+# MEDIO-03 — AUDITORÍA DOCUMENTAL DE SOLO LECTURA
+## FASE 16 DE 16: GRUPO 15 (60 MESES A 71 MESES Y 29 DÍAS)
+
+PROYECTO: CRED & EDI Antropometría 1.0.
+
+Esta es la ÚLTIMA FASE de la auditoría secuencial de los 15 grupos del Manual EDI peruano.
+
+La Fase 15 (Grupo 14) concluyó con 25 reactivos examinados, sin nuevos errores clínicos ni de puntuación reportados.
+
+Se mantiene el registro canónico de NUEVE hallazgos históricos pendientes, UNA observación textual #10 de baja prioridad y varias observaciones de presentación y contradicciones documentales separadas.
+
+AUTORIZO EXCLUSIVAMENTE:
+
+1. Auditoría documental de solo lectura del Grupo 15.
+2. Cotejo de sus 22 reactivos específicos.
+3. Verificación final de su semáforo, retrocesos, materiales, EN y ALA.
+4. Consolidación escrita de los hallazgos de las 16 fases.
+5. Elaboración de un informe de cierre de auditoría y propuesta de priorización futura, SIN IMPLEMENTAR CAMBIOS.
+
+NO AUTORIZO MODIFICAR CÓDIGO, PRUEBAS, RECURSOS, ASSETS, PLANTILLAS PDF NI CONFIGURACIONES.
+
+## 1. FUENTE OFICIAL
+
+Manual para la Aplicación de la Prueba de Evaluación del Desarrollo Infantil (EDI), Versión Peruana, Primera Edición, julio de 2026, MINSA/UNICEF.
+
+SHA-256 de referencia:
+
+48c3103621bac2e3e610ca55f3f86af997d1803cbf89bb890b069c285b4b0ff9
+
+Si tienes acceso real al archivo binario, calcular el SHA-256 e informar comando, ruta y resultado.
+
+Si el archivo solo está disponible mediante visor, declarar:
+
+IDENTIDAD CRIPTOGRÁFICA NO VERIFICADA EN ESTE ENTORNO.
+
+Páginas obligatorias:
+
+- PDF 47–48: Formato del Grupo 15.
+- PDF 107: Consulta G15, materiales, ALE y reglas.
+- PDF 108: Motriz Gruesa y Motriz Fina.
+- PDF 109: Lenguaje, Social y Conocimiento.
+- PDF 110: Separadora fotográfica; excluirla del inventario de reactivos.
+- PDF 111: Exploración Neurológica y Señales de Alarma.
+- PDF 44–46 y 103–106: Grupo 14 para el retroceso.
+- PDF 7–13: reglas generales y transversales.
+- PDF 112: Formato FUA, únicamente para comprobar la representación documental cuando corresponda.
+
+Diferenciar página física del PDF y folio impreso.
+
+No reconstruir texto clínico desde informes anteriores.
+
+## 2. INVENTARIO EXACTO DEL GRUPO 15
+
+Auditar individualmente los siguientes 22 reactivos específicos:
+
+MOTRIZ GRUESA:
+- MG 15.1
+- MG 15.2
+- MG 15.3
+
+MOTRIZ FINA:
+- MF 15.1
+- MF 15.2
+- MF 15.3
+
+LENGUAJE:
+- LE 15.1
+- LE 15.2
+- LE 15.3
+
+SOCIAL:
+- SO 15.1
+- SO 15.2
+- SO 15.3
+
+CONOCIMIENTO:
+- CO 15.1
+- CO 15.2
+- CO 15.3
+
+SEÑALES DE ALERTA:
+- ALE 15.1
+- ALE 15.2
+- ALE 15.3
+- ALE 15.4
+
+SEÑALES DE ALARMA:
+- ALA 15.1
+- ALA 15.2
+- ALA 15.3
+
+TOTAL: 15 de desarrollo + 4 ALE + 3 ALA = 22.
+
+FRB 1–7 son transversales y opcionales.
+
+EN 1.1 y EN 1.2 son transversales aplicables y obligatorios.
+
+EN 1.3 NO APLICA EN G15.
+
+Comprobar los 22 uniqueId reales de Kotlin sin inventar nombres ni duplicar identificadores.
+
+## 3. MATRIZ DOCUMENTAL INDIVIDUAL
+
+Para cada reactivo entregar:
+
+1. uniqueId real.
+2. itemCode oficial.
+3. Eje y área.
+4. Página PDF y folio.
+5. Pregunta literal del Formato.
+6. Pregunta literal de Consulta.
+7. Instrucción clínica oficial íntegra.
+8. Instrucción implementada en Kotlin.
+9. Modalidad oficial.
+10. Modalidad implementada.
+11. Asteriscos y (Observe).
+12. Materiales del encabezado.
+13. Materiales indispensables según la maniobra.
+14. Materiales alternativos u opcionales.
+15. Equipamiento e infraestructura.
+16. Láminas oficiales, cuando correspondan.
+17. Repeticiones permitidas.
+18. Criterios de acreditación.
+19. Polaridad SÍ/NO.
+20. Archivo y líneas exactas de Kotlin.
+21. Diferencias y su impacto.
+22. Dictamen con evidencia.
+
+Categorías:
+
+CONFORME / ERROR EN CÓDIGO / ERRATA DEL MANUAL / CONTRADICCIÓN INTERNA DEL MANUAL / NO VERIFICABLE.
+
+No declarar CONFORME una instrucción incompleta ni un requisito de material mal clasificado.
+
+## 4. PRIORIDAD MÁXIMA: EXPLORACIÓN NEUROLÓGICA G15
+
+El Formato G15, PDF 47, muestra solamente DOS reactivos de Exploración Neurológica.
+
+La Consulta G15, PDF 111, indica expresamente explorar EN 1.1 y EN 1.2.
+
+POR TANTO:
+
+- EN 1.1: OBLIGATORIO.
+- EN 1.2: OBLIGATORIO.
+- EN 1.3: NO APLICA.
+
+Inspeccionar:
+
+EdiOfficialCatalog.kt.
+EdiGlobalSemaphoreEngine.kt.
+CredEdiState.kt.
+EdiScreen.kt.
+EdiPdfExporter.kt.
+
+Comprobar:
+
+A. neurologicalEn13Applies o propiedad equivalente en G15.
+
+B. Que EN 1.3 no se exija para emitir semáforo definitivo.
+
+C. Que EN 1.3 no genere pendientes de respuesta.
+
+D. Que EN 1.3 no genere una advertencia errónea por falta de material o perímetro cefálico.
+
+E. Que EN 1.3 no quede marcado como alterado, normal o contestado en la ficha G15.
+
+F. Que EN 1.1 y EN 1.2 mantengan sus polaridades y efecto ROJO cuando corresponda.
+
+G. Que el informe PDF represente correctamente solamente los EN aplicables.
+
+H. Que la transición de G14 a G15 elimine exclusivamente la obligatoriedad de EN 1.3, sin eliminarlo del catálogo transversal global.
+
+I. Que las respuestas antiguas de EN 1.3 de otra sesión o grupo no contaminen G15.
+
+J. Que el hallazgo histórico #1 sobre la instrucción incompleta de EN 1.2 continúe visible y pendiente.
+
+ESTA ES UNA PRIORIDAD CRÍTICA DE SEGURIDAD CLÍNICA.
+
+NO MODIFICAR EL MOTOR.
+
+## 5. PRIORIDAD: EDAD DE 60 A 71 MESES Y FRONTERAS DEL APLICATIVO
+
+G15 abarca desde 60m 0d hasta 71m 29d.
+
+Verificar:
+
+- G14: 49m 0d a 59m 29d.
+- G15: 60m 0d a 71m 29d.
+- Primer día de G15: 60m 0d.
+- Último día de G15: 71m 29d.
+- Edad de 72m 0d: fuera del alcance de los grupos oficiales EDI incluidos en el manual.
+
+Revisar:
+
+1. Selección automática del Grupo 15.
+2. Uso de edad cronológica.
+3. Ausencia de corrección por prematuridad en mayores de dos años.
+4. Comparación de edad Manual EDI de 30 días frente a calendario CRED.
+5. Manejo de discrepancias entre métodos.
+6. Bloqueos por fecha de evaluación o nacimiento inválida.
+7. Separación de paciente y episodio.
+8. Comportamiento a los 59m 29d.
+9. Comportamiento a los 60m 0d.
+10. Comportamiento a los 71m 29d.
+11. Comportamiento a los 72m 0d.
+
+ATENCIÓN ESPECIAL:
+
+El aplicativo combina EDI con antropometría OMS/CRED.
+
+Comprobar si un paciente de 60 a 71 meses puede utilizar correctamente el módulo EDI aunque un indicador, gráfico o módulo antropométrico tenga un rango etario más limitado.
+
+NO asumir que los límites de una tabla antropométrica son automáticamente los límites de la prueba EDI.
+
+No extrapolar curvas OMS ni inventar referencias.
+
+Determinar si el comportamiento de la aplicación es:
+
+- Correcto.
+- Restricción intencional justificada.
+- Error de acoplamiento entre módulos.
+- No verificable.
+
+## 6. PRIORIDAD: MATERIALES G15
+
+El encabezado de Consulta PDF 107 enumera:
+
+- MG 15.3: Rollo de cinta adhesiva.
+- MF 15.1: Papel y lápiz.
+- MF 15.3: Papel y tijeras de punta redondeada.
+
+Comparar el encabezado con las maniobras reales.
+
+### MG 15.3
+
+La instrucción requiere preparar una línea recta sobre el suelo.
+
+Verificar:
+
+- Uso de cinta adhesiva.
+- Si es un requisito indispensable o si el manual permite otra manera de marcar la línea.
+- Cómo está representado en generalHeaderMaterials.
+- Cómo está representado en protocolRequiredMaterials.
+- Si la falta de material realmente impide la maniobra.
+- Si se introduce un falso bloqueo.
+
+No establecer alternativas que el manual no autorice expresamente.
+
+### MF 15.1
+
+Requiere papel y lápiz para copiar un triángulo.
+
+Verificar los criterios geométricos:
+
+- Tres líneas.
+- Tres ángulos cerrados.
+- Líneas rectas y completas.
+- Repeticiones permitidas.
+
+### MF 15.3
+
+Requiere papel y tijeras de punta redondeada.
+
+Verificar:
+
+- Preparación de una línea recta.
+- Corte de la hoja en dos partes.
+- Margen de error de un centímetro respecto de la línea.
+- Instrucción y demostración.
+- Material y seguridad de la maniobra.
+
+### MF 15.2
+
+Evalúa tocar consecutivamente la punta del pulgar con las puntas de los otros dedos.
+
+Comprobar que NO se exijan materiales físicos injustificados.
+
+Verificar la secuencia, mano utilizada y repeticiones permitidas.
+
+## 7. PRIORIDAD CRÍTICA: MATERIALES NO LISTADOS PARA CONOCIMIENTO
+
+### CO 15.1
+
+El Formato pregunta si el niño puede escribir dos números o dos letras.
+
+La Consulta PDF 109 indica entregar papel y lápiz.
+
+Sin embargo, el encabezado general de materiales de PDF 107 no enumera específicamente CO 15.1.
+
+Comprobar:
+
+A. Pregunta completa.
+
+B. Instrucción completa.
+
+C. Necesidad real de papel y lápiz.
+
+D. generalHeaderMaterials.
+
+E. protocolRequiredMaterials.
+
+F. requiresMaterialInProtocol.
+
+G. Visibilidad del botón "No evaluado (Falta material/lámina)".
+
+H. Consecuencia en el semáforo cuando no hay material.
+
+I. Reutilización legítima de papel y lápiz disponibles para MF 15.1.
+
+J. Criterio de acreditación: escribir dos letras o dos números.
+
+No exigir simultáneamente dos letras Y dos números si el manual permite una de ambas alternativas.
+
+### CO 15.3
+
+La Consulta PDF 109 indica mostrar monedas o billetes de diferentes denominaciones.
+
+Comprobar:
+
+- Necesidad real de objetos físicos.
+- Denominaciones que deben identificarse.
+- Número mínimo de respuestas correctas.
+- generalHeaderMaterials.
+- protocolRequiredMaterials.
+- requiresMaterialInProtocol.
+- Botón de falta de material.
+- Consecuencia de ausencia de monedas o billetes.
+- Si el código omite un requisito indispensable por no aparecer en el encabezado.
+
+NO asumir que el encabezado de materiales es exhaustivo si el cuerpo del protocolo exige objetos.
+
+NO introducir fotografías, reproducciones o sustitutos no autorizados por el documento.
+
+### CO 15.2
+
+Verificar que la habilidad de completar frases con palabras opuestas NO exija materiales físicos cuando la maniobra es enteramente verbal.
+
+Estos tres reactivos son prioritarios porque CO es un área obligatoria y la falta de material real puede afectar la validez del resultado.
+
+## 8. MOTRICIDAD GRUESA
+
+### MG 15.1
+
+Saltar en un solo pie hacia adelante siete veces, cayendo con el mismo pie.
+
+Verificar:
+
+- Modalidad de observación directa.
+- Cantidad de saltos.
+- Desplazamiento hacia adelante.
+- Mantenimiento del mismo pie.
+- Demostración.
+- Repeticiones oficiales.
+- Diferencia frente a MG 14.3, que evalúa tres saltos.
+
+### MG 15.2
+
+Saltar hacia atrás con los pies juntos.
+
+Verificar:
+
+- Maniobra completa.
+- Distancia y medidas de prevención de accidentes indicadas.
+- Criterio para lograr el hito.
+- Modalidad y polaridad.
+
+### MG 15.3
+
+Caminar siguiendo una línea recta, juntando talón de un pie con punta del otro.
+
+Verificar:
+
+- Preparación de línea en el suelo.
+- Número mínimo de pasos.
+- Demostración.
+- Repeticiones.
+- Materiales.
+- Criterio de acreditación exacto.
+
+No confundir esta maniobra con caminar simplemente sobre una línea sin contacto talón-punta.
+
+## 9. MOTRICIDAD FINA
+
+Auditar exhaustivamente MF 15.1–15.3:
+
+MF 15.1:
+Dibujo de triángulo con criterios oficiales.
+
+MF 15.2:
+Oposición secuencial pulgar-dedos.
+
+MF 15.3:
+Corte de papel mediante tijeras de punta redondeada siguiendo una línea.
+
+Confirmar:
+
+- Texto oficial y código.
+- Modalidad.
+- Asteriscos.
+- Repeticiones.
+- Materiales.
+- Requisitos de seguridad.
+- Polaridad.
+- Registro de falta de material.
+- Puntuación.
+- Exportación PDF.
+
+## 10. LENGUAJE G15
+
+### LE 15.1
+
+¿Habla con suficiente claridad para que otros lo entiendan?
+
+El procedimiento de Consulta PDF 109 exige realizar preguntas directamente al niño y comprobar que sus respuestas sean entendibles también para personas ajenas a su familia.
+
+Verificar:
+
+- Modalidad directa.
+- Preguntas utilizadas.
+- Criterio de claridad.
+- Instrucción clínica completa.
+- Diferencia frente a la entrevista de inteligibilidad de LE 12.2.
+
+### LE 15.2
+
+Evalúa expresión de emociones mediante palabras.
+
+La Consulta pide preguntar directamente al niño cómo se siente en determinadas situaciones.
+
+Comprobar:
+
+- Palabras como feliz, triste o enojado.
+- Respuesta sobre sentimientos.
+- Criterios de respuesta válida.
+- Que "bien" o "mal" no se acepten automáticamente si el manual los considera insuficientes.
+- Modalidad observacional.
+- Registro correcto de respuestas.
+
+### LE 15.3
+
+Evalúa el cumplimiento de órdenes verbales de TRES pasos.
+
+El protocolo incluye una secuencia verbal como:
+
+"Toca tu nariz, aplaude y levántate".
+
+Verificar:
+
+- Comprensión de los tres pasos.
+- Ejecución en el orden indicado.
+- Ausencia de ayuda gestual indebida, cuando corresponda.
+- Modalidad de observación.
+- Criterio de acreditación exacto.
+- No aceptar únicamente uno o dos pasos como logro completo.
+
+No confundir LE 15.3 con las órdenes sencillas de un paso de grupos anteriores.
+
+## 11. ÁREA SOCIAL G15
+
+### SO 15.1
+
+Compartir voluntariamente sus pertenencias con otros niños.
+
+Verificar:
+- Entrevista al cuidador.
+- Frecuencia.
+- Comparación con niños de edad semejante.
+- Criterio de acreditación.
+
+### SO 15.2
+
+Gusto por asistir a la escuela.
+
+Verificar:
+- Pregunta literal.
+- Entrevista dirigida.
+- Instrucción completa.
+- Posible limitación documental si el niño todavía no asiste a una institución educativa.
+- Si el código introduce alguna condición adicional no presente en el manual.
+
+No inventar una respuesta SÍ o NO cuando no exista información suficiente.
+
+### SO 15.3
+
+Esperar su turno durante la interacción con compañeros, maestros o cuidadores.
+
+Verificar:
+- Entrevista.
+- Ejemplos de turnos.
+- Interrupciones de conversaciones.
+- Frecuencia e intensidad.
+- Criterio oficial.
+- Polaridad.
+
+## 12. CUATRO SEÑALES DE ALERTA G15
+
+Revisar individualmente:
+
+ALE 15.1:
+Acercarse demasiado a objetos que llaman la atención o inclinar la cabeza para verlos.
+
+ALE 15.2:
+Caídas frecuentes al correr.
+
+ALE 15.3:
+Orinarse en la cama durante la noche.
+
+ALE 15.4:
+Dificultad para mantener la atención durante más de cinco minutos.
+
+### Prioridades clínicas
+
+ALE 15.1:
+Cotejar el criterio de frecuencia e intensidad frente al uso de dispositivos electrónicos, juguetes o escritura/dibujo según la instrucción real.
+
+ALE 15.2:
+Comprobar que la comparación con otros niños de edad similar esté completa.
+
+ALE 15.3:
+Verificar:
+- Frecuencia nocturna indicada en el manual.
+- Sondeo de dos o más episodios por semana cuando corresponda.
+- Comprobación de factores mencionados como líquidos antes de dormir o medicamentos.
+- Que el código no invente un diagnóstico a partir de la respuesta.
+
+ALE 15.4:
+Verificar el umbral temporal y el sondeo sobre actividades de lectoescritura.
+
+En las cuatro:
+
+- Modalidad entrevista dirigida.
+- Polaridad SÍ = alerta presente.
+- Carácter opcional.
+- Ausencia de modificación del semáforo global.
+- Advertencia no bloqueante si quedan sin responder.
+
+## 13. TRES SEÑALES DE ALARMA G15
+
+### ALA 15.1
+
+Dolores de cabeza persistentes, visión borrosa o mareos.
+
+Verificar:
+- Pregunta literal.
+- Entrevista dirigida.
+- Frecuencia y persistencia descritas.
+- Comparación con otros niños cuando el manual lo indica.
+- SÍ como señal ROJA.
+
+### ALA 15.2
+
+Dificultad para cepillarse los dientes, lavarse y secarse las manos o desvestirse sin ayuda.
+
+Verificar:
+- Instrucción íntegra.
+- Referencia a actividades de autocuidado.
+- Distinción entre necesitar enseñanza y no lograr realizarlas.
+- Modalidad entrevista.
+- Polaridad y alerta crítica.
+
+### ALA 15.3
+
+Miedo, agresión, timidez o tristeza con intensidad superior a la de sus pares durante más de tres días a la semana.
+
+Cotejar:
+
+- Formato PDF 47.
+- Consulta PDF 111.
+- Frecuencia temporal exacta.
+- Comparación de intensidad.
+- Las cuatro manifestaciones mencionadas.
+- Instrucción clínica íntegra.
+- Polaridad SÍ = ROJO.
+- Advertencia prioritaria aun con expediente incompleto.
+
+ATENCIÓN:
+
+En G15 NO aparece un reactivo ALA de pérdida de habilidades como ALA 14.2.
+
+No duplicar ALA 14.2 en G15 ni trasladar automáticamente su instrucción.
+
+Las tres ALA reales de G15 deben permanecer diferenciadas.
+
+## 14. RETROCESO G15 → G14 EN CINCO ÁREAS
+
+El Grupo 15 utiliza tres reactivos actuales en cada área MG, MF, LE, SO y CO.
+
+Verificar:
+
+- 3/3 o 2/3 SÍ actuales: VERDE.
+- 1/3 SÍ actual: AMARILLO.
+- 0/3 SÍ actuales explícitos: retroceso a G14.
+
+En retroceso:
+
+- 3/3 o 2/3 SÍ anteriores: AMARILLO.
+- 1/3 o 0/3 SÍ anteriores: ROJO.
+- Pendientes obligatorios: INCOMPLETE.
+
+Comprobar:
+
+- Los quince reactivos fuente de G14.
+- Identificadores independientes G15_RETRO_G14_{AREA}_{1..3}, o sus equivalentes reales.
+- Separación entre respuestas actuales y de retroceso.
+- Historial conservado pero ignorado cuando ya no corresponde.
+- Aislamiento por paciente y episodio.
+- Materiales de MF 14.1–14.3 y CO 14.1–14.2.
+- No reutilizar CO-R en G15.
+- No duplicar ítems canónicos.
+
+### PRIORIDAD: LE 14.3
+
+La tabla de retroceso G15 en PDF 48 añade (Observe) a LE 14.3 aunque el Formato original G14 lo presenta sin observación y su Consulta utiliza entrevista al cuidador.
+
+El código G14 implementa INTERVIEW_PRIMARY_WITH_OBSERVATION_COMPLEMENT.
+
+Verificar su reutilización en retroceso:
+
+- Entrevista principal.
+- Observación complementaria.
+- Resolución de discrepancias.
+- Estado INCOMPLETE cuando corresponda.
+- Información exportada al PDF.
+- No imponer un cambio arbitrario de modalidad.
+
+### PRIORIDAD: CO 14.3
+
+La tabla de retroceso G15, PDF 48, añade (Observe) e imprime "¿Cuándo...?" para el reactivo sobre las palabras ayer, hoy y mañana.
+
+Sin embargo, el Formato G14 PDF 44 y la Consulta G14 PDF 106 lo presentan como entrevista dirigida.
+
+Comprobar que el retroceso G15 → G14:
+
+- Reutilice el ítem canónico CO 14.3.
+- Mantenga la modalidad de entrevista.
+- No convierta artificialmente CO 14.3 en observación directa.
+- Documente la errata del PDF 48.
+- No active un panel dual innecesario.
+- No altere el resultado de área.
+
+## 15. SEMÁFORO GLOBAL G15
+
+Verificar:
+
+- Cinco áreas obligatorias MG, MF, LE, SO, CO.
+- Tres reactivos por área.
+- Cuatro ALE opcionales.
+- Siete FRB opcionales.
+- Tres ALA obligatorias.
+- SOLAMENTE DOS EN OBLIGATORIOS: EN 1.1 y EN 1.2.
+- EN 1.3 NO APLICA.
+- FRB y ALE no modifican el semáforo global.
+- Área ROJA, EN positiva o ALA positiva: ROJO.
+- Una o más áreas AMARILLAS sin condición ROJA: AMARILLO.
+- Cinco áreas VERDES con EN y ALA normales: VERDE.
+- Cualquier pendiente obligatorio: INCOMPLETE.
+- Retrocesos incompletos: INCOMPLETE.
+- Falta de material de área obligatoria: INCOMPLETE.
+- Alertas clínicas prioritarias visibles aunque existan bloqueos.
+
+ATENCIÓN:
+
+El Formato G15 PDF 47 conserva la errata de rúbrica superior de dos respuestas, pese a contener tres ítems por área.
+
+La Consulta G15 PDF 107 establece la regla correcta de tres reactivos.
+
+No copiar la errata de la plantilla al motor.
+
+## 16. INTERFAZ Y EXPORTACIÓN PDF
+
+Inspeccionar solamente en modo lectura:
+
+- EdiOfficialCatalog.kt.
+- EdiAreaFallbackEngine.kt.
+- EdiGlobalSemaphoreEngine.kt.
+- CredEdiState.kt.
+- CredEdiViewModel.kt, cuando corresponda.
+- EdiScreen.kt.
+- EdiPdfExporter.kt.
+
+Comprobar:
+
+1. Los 22 reactivos G15.
+2. Las cinco áreas de desarrollo.
+3. Las cuatro ALE.
+4. Las tres ALA.
+5. Solamente EN 1.1 y EN 1.2 aplicables.
+6. Retroceso a las cinco áreas ordinarias de G14.
+7. Materiales de MG 15.3, MF 15.1, MF 15.3, CO 15.1 y CO 15.3.
+8. Materiales opcionales frente a obligatorios.
+9. Respuestas definitivas y pendientes.
+10. Protección frente a edad fuera de rango.
+11. Alertas clínicas prioritarias.
+12. Exportación correcta de los 22 reactivos.
+13. Representación de EN 1.3 como NO APLICA u omisión justificada.
+14. Ausencia de marcas SÍ/NO ficticias para EN 1.3.
+15. Exportación de los tres ALA.
+16. Exportación de las cuatro ALE.
+17. Borrador sin semáforo definitivo.
+18. Trazabilidad de respuestas y retrocesos.
+19. No contaminación entre pacientes ni episodios.
+
+Comprobar expresamente que la plantilla genérica de PDF no obligue a completar tres EN o cuatro ALA en G15 cuando el número real aplicable es distinto.
+
+## 17. REGISTRO HISTÓRICO INALTERABLE
+
+Conservar los nueve hallazgos exactamente en esta numeración:
+
+#1 EN 1.2 — EdiOfficialCatalog.kt:1171.
+Oración final omitida sobre asimetría facial durante el llanto.
+
+#2 SO 4.2 — EdiOfficialCatalog.kt:1759.
+Pregunta completa omitida sobre estrategias para impedir el alejamiento del adulto.
+
+#3 LE 11.2 — EdiOfficialCatalog.kt:2717.
+Dos oraciones omitidas sobre frecuencia/intensidad y autorreferencia en tercera persona.
+
+#4 CredEdiState.kt.
+Tres ramas de baseResult.copy(...) no actualizan requiresImmediateClinicalAttentionDespiteIncomplete al degradar a INCOMPLETE un resultado previamente definitivo con alertas críticas.
+
+#5 MG 4.2 — EdiOfficialCatalog.kt:1713.
+Juguete atractivo clasificado erróneamente como material indispensable pese a existir estimulación verbal o cantada.
+
+#6 ALE 5.5 — EdiOfficialCatalog.kt:1919.
+Juguete atractivo clasificado erróneamente como material indispensable pese a existir estimulación verbal o cantada.
+
+#7 EdiScreen.kt:2343–2350.
+Badge genérico incorrecto o ambiguo para ALE 6.4 y ALE 9.1.
+
+#8 MG 8.2 — EdiOfficialCatalog.kt:2224.
+Juguete añadido indebidamente al requisito de silla pequeña o tapete.
+
+#9 SO 8.3 — EdiOfficialCatalog.kt:2298.
+Pelota/juguete clasificado como indispensable pese a existir la orden verbal "ven".
+
+OBSERVACIÓN SEPARADA #10:
+
+MG 12.1 — EdiOfficialCatalog.kt:2797.
+"hacia adelante" vs. "hacia delante". Diferencia literal menor sin impacto clínico demostrado.
+
+OBSERVACIÓN DE PRESENTACIÓN TAMBIÉN SEPARADA:
+
+EdiPdfExporter.kt:1156.
+cleanQ() no elimina el asterisco simple inicial de MF 13.1 al exportar el Anexo PDF en G13 o retroceso G14 → G13.
+
+DECISIONES DE DISEÑO JUSTIFICADAS:
+
+- ALE 4.1.
+- MG 7.2.
+
+CONTRADICCIONES DOCUMENTALES A PRESERVAR:
+
+- ALA 11.2, redacción truncada dentro del propio manual.
+- ALE 12.3, discrepancia de modalidad.
+- LE 13.3, discrepancia de modalidad.
+- MF 13.1, asterisco simple.
+- LE 14.3, discrepancia de modalidad.
+- CO 14.3, errata en retroceso G15.
+- Otras erratas oficiales documentadas en las fases anteriores.
+
+No renumerar los hallazgos.
+
+No cambiar sus descripciones.
+
+No mezclar discrepancias editoriales y defectos clínicos.
+
+## 18. CONTROL FINAL DEL INVENTARIO GLOBAL
+
+Después de terminar los 22 reactivos de G15, realizar una verificación de SOLO LECTURA de la estructura global del catálogo.
+
+Referencia documental acumulada de fases anteriores:
+
+- 15 grupos etarios.
+- 161 reactivos actuales de desarrollo en total.
+- 62 señales de alerta.
+- 34 señales de alarma.
+- 7 factores de riesgo biológico.
+- 3 reactivos transversales de exploración neurológica.
+- 3 reactivos especiales CO-R.
+
+TOTAL ESPERADO DE IDENTIFICADORES CANÓNICOS ÚNICOS: 270.
+
+COMPROBAR, NO PRESUPONER:
+
+A. Número real de grupos.
+
+B. Número de identificadores únicos por categoría.
+
+C. Duplicados.
+
+D. Códigos omitidos.
+
+E. Reactivos especiales CO-R correctamente indexados.
+
+F. Ausencia de CO en G1–G12.
+
+G. CO ordinario en G13–G15.
+
+H. FRB y ALE opcionales desde G5.
+
+I. EN 1.3 no aplicable en G15, aunque siga perteneciendo al catálogo transversal.
+
+J. Que la reutilización de reactivos en retroceso no incremente artificialmente el número de identificadores canónicos.
+
+K. Que los identificadores de respuesta de retroceso permanezcan separados de los identificadores canónicos.
+
+L. Que G15 sea el último grupo soportado y no se invente un Grupo 16.
+
+NO editar el catálogo.
+
+## 19. INFORME DE CIERRE MEDIO-03
+
+Al terminar G15, preparar un informe de cierre documental que incluya:
+
+A. Estado de cada una de las 16 fases.
+
+B. Grupos auditados y cantidad de reactivos revisados.
+
+C. Inventario global de identificadores.
+
+D. Errores clínicos de contenido pendientes.
+
+E. Errores de materiales y falsos requisitos.
+
+F. Errores de estado, alertas e interfaz.
+
+G. Errores de presentación de baja prioridad.
+
+H. Contradicciones documentales del manual.
+
+I. Decisiones de diseño justificadas.
+
+J. Limitaciones de verificación independiente.
+
+K. Diferencias entre errores confirmados y observaciones que requieren más pruebas.
+
+L. Priorización conceptual para una FUTURA fase de corrección autorizada.
+
+M. Archivos y líneas de código que potencialmente requerirían modificación futura.
+
+N. Dependencias entre correcciones: por ejemplo, no cambiar requisitos de materiales sin revisar badges de interfaz y controles de falta de material.
+
+O. Recomendaciones de pruebas futuras para evitar regresiones, sin ejecutarlas ni escribirlas.
+
+P. Estado de integridad del PDF.
+
+Q. Confirmación final de cero modificaciones.
+
+R. Declaración de qué puntos requieren aclaración técnica oficial antes de modificar el protocolo.
+
+NO IMPLEMENTAR CORRECCIONES.
+
+NO GENERAR PARCHES.
+
+NO MODIFICAR PRUEBAS.
+
+NO REFACTORIZAR.
+
+## 20. ENTREGABLES OBLIGATORIOS
+
+1. Matriz individual de los 22 reactivos G15.
+2. Auditoría especial de EN 1.1, EN 1.2 y no aplicabilidad de EN 1.3.
+3. Auditoría de fronteras 60m y 72m.
+4. Revisión de materiales del Grupo 15.
+5. Auditoría especial de CO 15.1 y CO 15.3.
+6. Revisión de MG 15.1–15.3.
+7. Revisión de MF 15.1–15.3.
+8. Revisión de LE 15.1–15.3.
+9. Revisión de SO 15.1–15.3.
+10. Auditoría individual de ALE 15.1–15.4.
+11. Auditoría individual de ALA 15.1–15.3.
+12. Retroceso G15 → G14 en cinco áreas.
+13. Cotejo especial de LE 14.3 y CO 14.3 en retroceso.
+14. Semáforo global.
+15. Revisión de interfaz y PDF.
+16. Inventario canónico global de 270 identificadores esperados.
+17. Relación de nuevos errores reales de G15.
+18. Registro histórico intacto.
+19. Informe de cierre de las 16 fases.
+20. Confirmación expresa de cero archivos modificados.
+
+## 21. RESTRICCIONES ABSOLUTAS
+
+NO modificar código de producción.
+
+NO modificar motores clínicos.
+
+NO modificar pruebas.
+
+NO modificar recursos, láminas ni assets.
+
+NO modificar plantillas PDF.
+
+NO modificar configuraciones.
+
+NO renumerar hallazgos.
+
+NO inventar reglas clínicas.
+
+NO crear identificadores.
+
+NO ejecutar correcciones.
+
+NO iniciar una fase de implementación.
+
+NO declarar que el aplicativo completo está clínicamente validado solo por haber terminado el cotejo documental.
+
+DETENERSE AL FINALIZAR LA FASE 16.
+
+ESPERAR AUTORIZACIÓN EXPRESA ANTES DE CUALQUIER CAMBIO FUTURO.

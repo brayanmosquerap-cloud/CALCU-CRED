@@ -67,6 +67,7 @@ import com.example.ui.components.TrendLineIcon
 import com.example.ui.theme.AlertRed
 import com.example.ui.theme.BorderSoftGreen
 import com.example.ui.theme.BorderSoftRed
+import com.example.ui.theme.BorderSubtleGray
 import com.example.ui.theme.ClinicalGreen
 import com.example.ui.theme.DarkGreenPill
 import com.example.ui.theme.DarkRedText
@@ -74,6 +75,7 @@ import com.example.ui.theme.DarkText
 import com.example.ui.theme.MutedText
 import com.example.ui.theme.SlateText
 import com.example.ui.theme.SoftAmberBg
+import com.example.ui.theme.SoftGrayBg
 import com.example.ui.theme.SoftGreenBg
 import com.example.ui.theme.SoftRedBg
 import com.example.ui.theme.WarningAmber
@@ -230,18 +232,68 @@ fun CurvasOmsScreen(
 
                         Surface(
                             shape = RoundedCornerShape(50),
-                            color = if (state.usaEdadCorregida) SoftAmberBg else Color(0xFFE0F2FE),
+                            color = if (state.usaEdadCorregida || state.isAgeDependentEvaluationBlocked) SoftAmberBg else Color(0xFFE0F2FE),
                             border = BorderStroke(
                                 1.dp,
-                                if (state.usaEdadCorregida) WarningAmber.copy(alpha = 0.5f) else Color(0xFFBAE6FD)
+                                if (state.usaEdadCorregida || state.isAgeDependentEvaluationBlocked) WarningAmber.copy(alpha = 0.5f) else Color(0xFFBAE6FD)
                             )
                         ) {
                             Text(
-                                text = if (state.usaEdadCorregida) "EC Corregida" else "Cronológica",
-                                color = if (state.usaEdadCorregida) WarningText else Color(0xFF0369A1),
+                                text = when {
+                                    state.isBirthMaturityConfirmationPendingInUnder24m -> "Confirmar cond."
+                                    state.isAgeDependentEvaluationBlocked -> "EC Pendiente"
+                                    state.usaEdadCorregida -> "EC Corregida"
+                                    else -> "Cronológica"
+                                },
+                                color = if (state.usaEdadCorregida || state.isAgeDependentEvaluationBlocked) WarningText else Color(0xFF0369A1),
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.ExtraBold,
                                 modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+
+                    if (state.isAgeDependentEvaluationBlocked) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("curvas_pending_corrected_age_banner"),
+                            shape = RoundedCornerShape(14.dp),
+                            color = SoftAmberBg,
+                            border = BorderStroke(1.dp, WarningAmber.copy(alpha = 0.5f))
+                        ) {
+                            Text(
+                                text = when {
+                                    state.ediHasGestationalContradiction ->
+                                        "⚠ Contradicción gestacional: confirme la condición al nacer y la EG exacta para obtener la clasificación OMS definitiva."
+                                    state.isBirthMaturityConfirmationPendingInUnder24m ->
+                                        "⚠ CONDICIÓN AL NACER PENDIENTE DE CONFIRMACIÓN: menor de 24 meses (${state.edadCronologicaAMD}) sin antecedente gestacional confirmado. Confirme si nació a término o prematuro para obtener la clasificación OMS definitiva por edad."
+                                    else ->
+                                        "⚠ EDAD CORREGIDA PENDIENTE: pretérmino confirmado (< 24 meses) sin EG exacta registrada. La clasificación por edad requiere confirmar las semanas de gestación."
+                                },
+                                color = WarningText,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            )
+                        }
+                    } else if (!eval.isReferenceAvailable) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("curvas_out_of_range_banner"),
+                            shape = RoundedCornerShape(14.dp),
+                            color = SoftGrayBg,
+                            border = BorderStroke(1.dp, BorderSubtleGray)
+                        ) {
+                            Text(
+                                text = "ℹ ${eval.unavailabilityTitle}: ${eval.unavailabilityReason}",
+                                color = SlateText,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                             )
                         }
                     }
@@ -314,6 +366,21 @@ fun CurvasOmsScreen(
             // =========================================================================
             // CARD 2: PATRÓN OMS + SUMMARY BANNER + WHO Z-SCORE CHART + LEGEND
             // =========================================================================
+            val isSelectedIndicatorMissingMeasurement = state.isOmsAgeRangeAvailable && when (state.selectedIndicador) {
+                CurvaIndicador.PE -> !state.hasPesoIngresado
+                CurvaIndicador.TE -> !state.hasLongitudIngresada
+                CurvaIndicador.PT -> !state.hasPesoIngresado || !state.hasLongitudIngresada
+                CurvaIndicador.IMCE -> !state.hasPesoIngresado || !state.hasLongitudIngresada
+                CurvaIndicador.PCE -> !state.hasPerimetroCefalicoIngresado
+            }
+            val isSelectedIndicatorOutOfRange = !eval.isReferenceAvailable || isSelectedIndicatorMissingMeasurement
+            val isSelectedIndicatorBlockedByAge = !isSelectedIndicatorMissingMeasurement && when (state.selectedIndicador) {
+                CurvaIndicador.PT -> state.isCorrectedAgePending || state.ediHasGestationalContradiction
+                else -> state.isAgeDependentEvaluationBlocked
+            }
+            val isSelectedIndicatorPendingBirthMaturity = !isSelectedIndicatorMissingMeasurement &&
+                state.selectedIndicador != CurvaIndicador.PT && state.isBirthMaturityConfirmationPendingInUnder24m
+
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(28.dp),
@@ -344,7 +411,7 @@ fun CurvasOmsScreen(
                                 contentAlignment = Alignment.Center
                             ) {
                                 TrendLineIcon(
-                                    tint = chartAccentColor,
+                                    tint = if (isSelectedIndicatorOutOfRange) SlateText else chartAccentColor,
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
@@ -408,10 +475,14 @@ fun CurvasOmsScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.weight(1f)
                             ) {
-                                val statusDotColor = when (eval.severity) {
-                                    ClassificationSeverity.NORMAL -> chartAccentColor
-                                    ClassificationSeverity.WARNING -> WarningAmber
-                                    ClassificationSeverity.SEVERE -> AlertRed
+                                val statusDotColor = when {
+                                    isSelectedIndicatorOutOfRange -> SlateText
+                                    isSelectedIndicatorBlockedByAge -> WarningAmber
+                                    else -> when (eval.severity) {
+                                        ClassificationSeverity.NORMAL -> chartAccentColor
+                                        ClassificationSeverity.WARNING -> WarningAmber
+                                        ClassificationSeverity.SEVERE -> AlertRed
+                                    }
                                 }
                                 Box(
                                     modifier = Modifier
@@ -422,7 +493,18 @@ fun CurvasOmsScreen(
                                 Spacer(modifier = Modifier.width(10.dp))
                                 Column {
                                     Text(
-                                        text = "${eval.patientValueFormatted} ${eval.unit} (${eval.zScore.formatSignedDecimal(1)} DE) · ${eval.shortClassification}",
+                                        text = when {
+                                            isSelectedIndicatorMissingMeasurement ->
+                                                "Sin medición (${eval.patientValueFormatted} ${eval.unit}) · ${eval.unavailabilityTitle}"
+                                            isSelectedIndicatorOutOfRange ->
+                                                "${eval.patientValueFormatted} ${eval.unit} · ${eval.unavailabilityTitle}"
+                                            isSelectedIndicatorPendingBirthMaturity ->
+                                                "${eval.patientValueFormatted} ${eval.unit} · Clasificación pendiente de confirmar condición al nacer (Provisional cronológica: ${eval.shortClassification})"
+                                            isSelectedIndicatorBlockedByAge ->
+                                                "${eval.patientValueFormatted} ${eval.unit} · Clasificación pendiente de Edad Corregida"
+                                            else ->
+                                                "${eval.patientValueFormatted} ${eval.unit} (${eval.zScore.formatSignedDecimal(1)} DE) · ${eval.shortClassification}"
+                                        },
                                         color = DarkText,
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.ExtraBold,
@@ -431,16 +513,24 @@ fun CurvasOmsScreen(
                                         modifier = Modifier.testTag("curva_summary_headline")
                                     )
                                     Spacer(modifier = Modifier.height(2.dp))
-                                    val subLine = when (state.selectedIndicador) {
-                                        CurvaIndicador.PE -> "Control a ${state.edadEfectivaAMD} (${state.edadEfectivaTipoLabel}) · Velocidad: +${state.globalDiagnosis.gananciaGramosMes} g/mes"
-                                        CurvaIndicador.PCE -> "Control a ${state.edadEfectivaAMD} (${state.edadEfectivaTipoLabel}) · Fontanela normotensa"
-                                        else -> "Control a ${state.edadEfectivaAMD} (${state.edadEfectivaTipoLabel}) · ${eval.clinicalDetail}"
+                                    val subLine = when {
+                                        isSelectedIndicatorOutOfRange ->
+                                            eval.unavailabilityReason
+                                        isSelectedIndicatorPendingBirthMaturity ->
+                                            "Medición registrada conservada · Confirme si nació a término o prematuro (< 24m)"
+                                        isSelectedIndicatorBlockedByAge ->
+                                            "Medición registrada conservada · Confirme la Edad Gestacional exacta"
+                                        else -> when (state.selectedIndicador) {
+                                            CurvaIndicador.PE -> "Control a ${state.edadEfectivaAMD} (${state.edadEfectivaTipoLabel}) · Velocidad: +${state.globalDiagnosis.gananciaGramosMes} g/mes"
+                                            CurvaIndicador.PCE -> "Control a ${state.edadEfectivaAMD} (${state.edadEfectivaTipoLabel}) · Fontanela normotensa"
+                                            else -> "Control a ${state.edadEfectivaAMD} (${state.edadEfectivaTipoLabel}) · ${eval.clinicalDetail}"
+                                        }
                                     }
                                     Text(
                                         text = subLine,
                                         color = MutedText,
                                         fontSize = 11.sp,
-                                        maxLines = 1,
+                                        maxLines = 2,
                                         overflow = TextOverflow.Ellipsis
                                     )
                                 }
@@ -448,12 +538,21 @@ fun CurvasOmsScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Surface(
                                 shape = RoundedCornerShape(50),
-                                color = SoftGreenBg,
-                                border = BorderStroke(1.dp, BorderSoftGreen)
+                                color = if (isSelectedIndicatorOutOfRange) SoftGrayBg else SoftGreenBg,
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isSelectedIndicatorOutOfRange) BorderSubtleGray else BorderSoftGreen
+                                )
                             ) {
                                 Text(
-                                    text = "Mediana: ${eval.medianFormatted}",
-                                    color = DarkGreenPill,
+                                    text = when {
+                                        isSelectedIndicatorMissingMeasurement -> "Sin medición"
+                                        isSelectedIndicatorOutOfRange -> "Fuera de rango"
+                                        isSelectedIndicatorPendingBirthMaturity -> "Pendiente cond."
+                                        isSelectedIndicatorBlockedByAge -> "Pendiente EC"
+                                        else -> "Mediana: ${eval.medianFormatted}"
+                                    },
+                                    color = if (isSelectedIndicatorOutOfRange) SlateText else DarkGreenPill,
                                     fontSize = 11.sp,
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.ExtraBold,
@@ -465,61 +564,127 @@ fun CurvasOmsScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // WHO Z-Score Chart Canvas Container (Blue for Niño, Pink for Niña across P/E, T/E, P/T, IMC/E, PC/E)
+                    // WHO Z-Score Chart Canvas Container (or neutral out-of-range notice without plotting clamped point)
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(295.dp)
                             .testTag("who_growth_chart_surface"),
                         shape = RoundedCornerShape(18.dp),
-                        color = chartCanvasSurfaceBg,
-                        border = BorderStroke(1.dp, chartCanvasBorder)
-                    ) {
-                        WhoGrowthChartCanvas(
-                            evaluation = eval,
-                            plotBgColor = chartPlotFillColor,
-                            gridColor = chartGridColor,
-                            axisTextColor = chartAxisTextColor,
-                            primaryAccentColor = chartAccentColor,
-                            navyAccentColor = CurvasNavy,
-                            referenceLineColor = chartReferenceLineColor,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(10.dp)
+                        color = if (isSelectedIndicatorOutOfRange) SoftGrayBg else chartCanvasSurfaceBg,
+                        border = BorderStroke(
+                            1.dp,
+                            if (isSelectedIndicatorOutOfRange) BorderSubtleGray else chartCanvasBorder
                         )
+                    ) {
+                        if (isSelectedIndicatorOutOfRange) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(20.dp)
+                                    .testTag("curvas_chart_unavailable_card"),
+                                verticalArrangement = Arrangement.Center,
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = eval.unavailabilityTitle,
+                                    color = DarkText,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Black,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = eval.unavailabilityReason,
+                                    color = SlateText,
+                                    fontSize = 12.sp,
+                                    lineHeight = 17.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = Color.White,
+                                    border = BorderStroke(1.dp, BorderSubtleGray)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        Text(
+                                            text = "Rango OMS implementado: ${eval.implementedRangeLabel}",
+                                            color = DarkText,
+                                            fontSize = 11.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = if (isSelectedIndicatorMissingMeasurement) {
+                                                "Medición actual: -- (Sin medición) · Edad: ${eval.edadAMD}"
+                                            } else {
+                                                "Dato conservado: ${eval.patientValueFormatted} ${eval.unit} · Edad: ${eval.edadAMD}"
+                                            },
+                                            color = MutedText,
+                                            fontSize = 11.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.SemiBold,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        } else {
+                            WhoGrowthChartCanvas(
+                                evaluation = eval,
+                                plotBgColor = chartPlotFillColor,
+                                gridColor = chartGridColor,
+                                axisTextColor = chartAxisTextColor,
+                                primaryAccentColor = chartAccentColor,
+                                navyAccentColor = CurvasNavy,
+                                referenceLineColor = chartReferenceLineColor,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(10.dp)
+                            )
+                        }
                     }
 
-                    Spacer(modifier = Modifier.height(14.dp))
+                    if (!isSelectedIndicatorOutOfRange) {
+                        Spacer(modifier = Modifier.height(14.dp))
 
-                    // Clean Bottom Legend Row (Matches curvas_oms_251c1c24.png)
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        LegendItem(
-                            color = ClinicalGreen,
-                            text = "0 DE: Mediana",
-                            textColor = DarkText,
-                            isBold = true,
-                            pillHeight = 5.dp
-                        )
-                        LegendItem(
-                            color = WarningAmber,
-                            text = "±2 DE: Alerta",
-                            textColor = SlateText,
-                            isBold = false,
-                            pillHeight = 5.dp
-                        )
-                        LegendItem(
-                            color = AlertRed,
-                            text = "±3 DE: Severo",
-                            textColor = SlateText,
-                            isBold = false,
-                            pillHeight = 2.dp
-                        )
+                        // Clean Bottom Legend Row (Matches curvas_oms_251c1c24.png)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            LegendItem(
+                                color = ClinicalGreen,
+                                text = "0 DE: Mediana",
+                                textColor = DarkText,
+                                isBold = true,
+                                pillHeight = 5.dp
+                            )
+                            LegendItem(
+                                color = WarningAmber,
+                                text = "±2 DE: Alerta",
+                                textColor = SlateText,
+                                isBold = false,
+                                pillHeight = 5.dp
+                            )
+                            LegendItem(
+                                color = AlertRed,
+                                text = "±3 DE: Severo",
+                                textColor = SlateText,
+                                isBold = false,
+                                pillHeight = 2.dp
+                            )
+                        }
                     }
                 }
             }
@@ -538,7 +703,7 @@ fun CurvasOmsScreen(
                         .fillMaxWidth()
                         .padding(16.dp)
                 ) {
-                    // Header row: Checkbox icon + Puntos de Corte OMS (2 meses) (no right badge)
+                    // Header row: Checkbox icon + Puntos de Corte OMS
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
@@ -549,7 +714,16 @@ fun CurvasOmsScreen(
                         )
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
-                            text = eval.cutoffHeaderTitle,
+                            text = when {
+                                isSelectedIndicatorOutOfRange ->
+                                    eval.cutoffHeaderTitle
+                                isSelectedIndicatorPendingBirthMaturity ->
+                                    "Puntos de Corte OMS (Condición al nacer pendiente)"
+                                isSelectedIndicatorBlockedByAge ->
+                                    "Puntos de Corte OMS (Edad Corregida Pendiente)"
+                                else ->
+                                    eval.cutoffHeaderTitle
+                            },
                             color = DarkText,
                             fontSize = 15.sp,
                             fontWeight = FontWeight.ExtraBold
@@ -558,20 +732,96 @@ fun CurvasOmsScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Active classification card FIRST, followed by compact single-line reference rows
-                    val selectedRow = eval.cutoffRows.firstOrNull { it.isSelected } ?: eval.cutoffRows[2]
-                    val otherRows = eval.cutoffRows.filter { it != selectedRow }
+                    if (isSelectedIndicatorOutOfRange || eval.cutoffRows.isEmpty()) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("curvas_cutoff_unavailable_card"),
+                            shape = RoundedCornerShape(16.dp),
+                            color = SoftGrayBg,
+                            border = BorderStroke(1.dp, BorderSubtleGray)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp)
+                            ) {
+                                Text(
+                                    text = if (isSelectedIndicatorMissingMeasurement) {
+                                        when (state.selectedIndicador) {
+                                            CurvaIndicador.PCE -> "Sin clasificación cefálica (Sin medición)"
+                                            CurvaIndicador.PE -> "Sin clasificación de Peso/Edad (Sin medición)"
+                                            CurvaIndicador.TE -> "Sin clasificación de Talla/Edad (Sin medición)"
+                                            CurvaIndicador.PT -> "Sin clasificación de Peso/Talla (Sin medición)"
+                                            CurvaIndicador.IMCE -> "Sin clasificación de IMC/Edad (Sin medición)"
+                                        }
+                                    } else {
+                                        "Sin puntos de corte OMS aplicables"
+                                    },
+                                    color = DarkText,
+                                    fontSize = 13.5.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = if (isSelectedIndicatorMissingMeasurement) {
+                                        "${eval.patientValueFormatted} ${eval.unit} · ${eval.unavailabilityTitle}"
+                                    } else {
+                                        "${eval.patientValueFormatted} ${eval.unit} · Sin referencia OMS (${eval.implementedRangeLabel})"
+                                    },
+                                    color = SlateText,
+                                    fontSize = 11.5.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = eval.unavailabilityReason,
+                                    color = MutedText,
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp
+                                )
+                            }
+                        }
+                    } else {
+                        // Active classification card FIRST, followed by compact single-line reference rows
+                        val selectedRow = eval.cutoffRows.firstOrNull { it.isSelected } ?: eval.cutoffRows[2]
+                        val otherRows = eval.cutoffRows.filter { it != selectedRow }
+                        val displayRow = when {
+                            isSelectedIndicatorPendingBirthMaturity ->
+                                selectedRow.copy(
+                                    title = "Clasificación pendiente de confirmar condición al nacer",
+                                    subtitle = "Provisional cronológica (${state.edadCronologicaAMD}): ${selectedRow.title} · Confirme si nació a término o prematuro",
+                                    severity = ClassificationSeverity.WARNING
+                                )
+                            isSelectedIndicatorBlockedByAge ->
+                                selectedRow.copy(
+                                    title = "Clasificación pendiente de Edad Corregida",
+                                    subtitle = "Confirme la Edad Gestacional exacta para calcular el puntaje Z definitivo",
+                                    severity = ClassificationSeverity.WARNING
+                                )
+                            else ->
+                                selectedRow
+                        }
 
-                    ActiveCutoffCard(
-                        row = selectedRow,
-                        patientBadgeText = "${eval.patientValueFormatted} ${eval.unit} · Z = ${eval.zScore.formatSignedDecimal(1)} DE"
-                    )
+                        ActiveCutoffCard(
+                            row = displayRow,
+                            patientBadgeText = when {
+                                isSelectedIndicatorPendingBirthMaturity ->
+                                    "${eval.patientValueFormatted} ${eval.unit} · Condición pendiente"
+                                isSelectedIndicatorBlockedByAge ->
+                                    "${eval.patientValueFormatted} ${eval.unit} · EC Pendiente"
+                                else ->
+                                    "${eval.patientValueFormatted} ${eval.unit} · Z = ${eval.zScore.formatSignedDecimal(1)} DE"
+                            }
+                        )
 
-                    Spacer(modifier = Modifier.height(10.dp))
+                        Spacer(modifier = Modifier.height(10.dp))
 
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        otherRows.forEach { row ->
-                            CompactCutoffReferenceRow(row = row)
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            otherRows.forEach { row ->
+                                CompactCutoffReferenceRow(row = row)
+                            }
                         }
                     }
                 }
@@ -1017,20 +1267,25 @@ private fun WhoGrowthChartCanvas(
             )
         }
 
-        // Vertical dashed line at current patient X position
-        val xRef = mapX(evaluation.patientX)
+        val hasValidPatientPoint = evaluation.patientX.isFinite() &&
+            evaluation.patientY.isFinite() &&
+            evaluation.zScore.isFinite()
         val classifiedPointColor = when (evaluation.severity) {
             ClassificationSeverity.NORMAL -> ClinicalGreen
             ClassificationSeverity.WARNING -> WarningAmber
             ClassificationSeverity.SEVERE -> AlertRed
         }
-        drawLine(
-            color = primaryAccentColor.copy(alpha = 0.75f),
-            start = Offset(xRef, topPad),
-            end = Offset(xRef, topPad + chartH),
-            strokeWidth = 1.3.dp.toPx(),
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
-        )
+        if (hasValidPatientPoint) {
+            // Vertical dashed line at current patient X position
+            val xRef = mapX(evaluation.patientX)
+            drawLine(
+                color = primaryAccentColor.copy(alpha = 0.75f),
+                start = Offset(xRef, topPad),
+                end = Offset(xRef, topPad + chartH),
+                strokeWidth = 1.3.dp.toPx(),
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 6f), 0f)
+            )
+        }
 
         // WHO Z-score curves: (+3, +2, +1, 0, -1, -2, -3)
         evaluation.curves.forEach { curve ->
@@ -1088,77 +1343,80 @@ private fun WhoGrowthChartCanvas(
             }
         }
 
-        // Patient Trajectory: Previous point -> Current point
-        val prevPt = Offset(mapX(evaluation.previousX), mapY(evaluation.previousY))
-        val currPt = Offset(mapX(evaluation.patientX), mapY(evaluation.patientY))
+        if (hasValidPatientPoint) {
+            val currPt = Offset(mapX(evaluation.patientX), mapY(evaluation.patientY))
+            if (evaluation.previousX.isFinite() && evaluation.previousY.isFinite()) {
+                // Patient Trajectory: Previous point -> Current point
+                val prevPt = Offset(mapX(evaluation.previousX), mapY(evaluation.previousY))
+                drawLine(
+                    color = navyAccentColor,
+                    start = prevPt,
+                    end = currPt,
+                    strokeWidth = 2.2.dp.toPx(),
+                    cap = StrokeCap.Round
+                )
 
-        drawLine(
-            color = navyAccentColor,
-            start = prevPt,
-            end = currPt,
-            strokeWidth = 2.2.dp.toPx(),
-            cap = StrokeCap.Round
-        )
+                // Previous point (hollow white circle with navyAccentColor stroke)
+                drawCircle(
+                    color = Color.White,
+                    radius = 4.5.dp.toPx(),
+                    center = prevPt
+                )
+                drawCircle(
+                    color = navyAccentColor,
+                    radius = 4.5.dp.toPx(),
+                    center = prevPt,
+                    style = Stroke(width = 2.dp.toPx())
+                )
+            }
 
-        // Previous point (hollow white circle with navyAccentColor stroke)
-        drawCircle(
-            color = Color.White,
-            radius = 4.5.dp.toPx(),
-            center = prevPt
-        )
-        drawCircle(
-            color = navyAccentColor,
-            radius = 4.5.dp.toPx(),
-            center = prevPt,
-            style = Stroke(width = 2.dp.toPx())
-        )
+            // Current point halo + white ring + solid navy/severity center
+            drawCircle(
+                color = classifiedPointColor.copy(alpha = 0.25f),
+                radius = 9.dp.toPx(),
+                center = currPt
+            )
+            drawCircle(
+                color = Color.White,
+                radius = 6.dp.toPx(),
+                center = currPt
+            )
+            drawCircle(
+                color = navyAccentColor,
+                radius = 4.5.dp.toPx(),
+                center = currPt
+            )
 
-        // Current point halo + white ring + solid navy/severity center
-        drawCircle(
-            color = classifiedPointColor.copy(alpha = 0.25f),
-            radius = 9.dp.toPx(),
-            center = currPt
-        )
-        drawCircle(
-            color = Color.White,
-            radius = 6.dp.toPx(),
-            center = currPt
-        )
-        drawCircle(
-            color = navyAccentColor,
-            radius = 4.5.dp.toPx(),
-            center = currPt
-        )
+            // On-chart floating callout pill showing classified group & exact age/coordinate
+            val calloutText = "${evaluation.shortClassification} (${evaluation.edadAMD})"
+            val calloutPaint = Paint(axisTextPaint).apply {
+                textAlign = Paint.Align.CENTER
+                color = Color.White.toArgb()
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                textSize = 8.5.dp.toPx()
+            }
+            val textWidth = calloutPaint.measureText(calloutText)
+            val pillW = textWidth + 12.dp.toPx()
+            val pillH = 16.dp.toPx()
+            val rawPillX = (currPt.x - pillW / 2f).coerceIn(leftPad + 2.dp.toPx(), leftPad + chartW - pillW - 2.dp.toPx())
+            val rawPillY = if (currPt.y - pillH - 8.dp.toPx() >= topPad + 2.dp.toPx()) {
+                currPt.y - pillH - 8.dp.toPx()
+            } else {
+                (currPt.y + 8.dp.toPx()).coerceAtMost(topPad + chartH - pillH - 2.dp.toPx())
+            }
 
-        // On-chart floating callout pill showing classified group & exact age/coordinate
-        val calloutText = "${evaluation.shortClassification} (${evaluation.edadAMD})"
-        val calloutPaint = Paint(axisTextPaint).apply {
-            textAlign = Paint.Align.CENTER
-            color = Color.White.toArgb()
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textSize = 8.5.dp.toPx()
+            drawRoundRect(
+                color = classifiedPointColor,
+                topLeft = Offset(rawPillX, rawPillY),
+                size = Size(pillW, pillH),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(pillH / 2f, pillH / 2f)
+            )
+            drawContext.canvas.nativeCanvas.drawText(
+                calloutText,
+                rawPillX + pillW / 2f,
+                rawPillY + pillH * 0.68f,
+                calloutPaint
+            )
         }
-        val textWidth = calloutPaint.measureText(calloutText)
-        val pillW = textWidth + 12.dp.toPx()
-        val pillH = 16.dp.toPx()
-        val rawPillX = (currPt.x - pillW / 2f).coerceIn(leftPad + 2.dp.toPx(), leftPad + chartW - pillW - 2.dp.toPx())
-        val rawPillY = if (currPt.y - pillH - 8.dp.toPx() >= topPad + 2.dp.toPx()) {
-            currPt.y - pillH - 8.dp.toPx()
-        } else {
-            (currPt.y + 8.dp.toPx()).coerceAtMost(topPad + chartH - pillH - 2.dp.toPx())
-        }
-
-        drawRoundRect(
-            color = classifiedPointColor,
-            topLeft = Offset(rawPillX, rawPillY),
-            size = Size(pillW, pillH),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(pillH / 2f, pillH / 2f)
-        )
-        drawContext.canvas.nativeCanvas.drawText(
-            calloutText,
-            rawPillX + pillW / 2f,
-            rawPillY + pillH * 0.68f,
-            calloutPaint
-        )
     }
 }

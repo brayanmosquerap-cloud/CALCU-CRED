@@ -6,6 +6,7 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +33,11 @@ import com.example.ui.theme.MyApplicationTheme
 import com.example.viewmodel.CredEdiViewModel
 
 class MainActivity : ComponentActivity() {
+
+    private val credEdiViewModel: CredEdiViewModel by viewModels {
+        CredEdiViewModel.provideFactory(applicationContext)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(
@@ -45,8 +51,18 @@ class MainActivity : ComponentActivity() {
             )
         )
         setContent {
-            CredEdiApp()
+            CredEdiApp(viewModel = credEdiViewModel)
         }
+    }
+
+    override fun onPause() {
+        credEdiViewModel.flushPendingAutosaveAsync()
+        super.onPause()
+    }
+
+    override fun onStop() {
+        credEdiViewModel.flushPendingAutosaveAsync()
+        super.onStop()
     }
 }
 
@@ -83,6 +99,8 @@ fun CredEdiApp(
                 when (state.currentTab) {
                     AppTab.CALCULADORA -> CalculadoraScreen(
                         state = state,
+                        onPatientFullNameChange = viewModel::updatePatientFullName,
+                        onPatientDniChange = viewModel::updatePatientDni,
                         onSelectSexo = viewModel::selectSexo,
                         onFechaNacimientoChange = viewModel::updateFechaNacimiento,
                         onFechaEvaluacionChange = viewModel::updateFechaEvaluacion,
@@ -97,6 +115,7 @@ fun CredEdiApp(
                         onPesoInputChange = viewModel::updatePesoInput,
                         onLongitudInputChange = viewModel::updateLongitudInput,
                         onPerimetroCefalicoInputChange = viewModel::updatePerimetroCefalicoInput,
+                        onConfirmTermWithoutWeeks = viewModel::confirmEdiTermWithoutWeeks,
                         onContinueToCurvas = { viewModel.selectTab(AppTab.CURVAS_OMS) }
                     )
 
@@ -134,7 +153,35 @@ fun CredEdiApp(
                         onRecordDualEvidence = viewModel::recordEdiDualEvidence,
                         onRecordFallbackResponse = viewModel::recordEdiFallbackResponse,
                         onRecordFallbackDualEvidence = viewModel::recordEdiFallbackDualEvidence,
-                        onUpdateItemClinicalNote = viewModel::updateEdiItemClinicalNote
+                        onUpdateItemClinicalNote = viewModel::updateEdiItemClinicalNote,
+                        onConfirmTermWithoutWeeks = viewModel::confirmEdiTermWithoutWeeks,
+                        onClearRegisteredEg = viewModel::clearEdiRegisteredEg,
+                        onConfirmContradictionKeepRegisteredEg = viewModel::confirmEdiContradictionKeepRegisteredEg,
+                        onConfirmContradictionAsPretermWithoutWeeks = viewModel::confirmEdiContradictionAsPretermWithoutWeeks,
+                        onUpdateEgSemanas = viewModel::updateEgSemanas,
+                        onOpenArchivedPreview = viewModel::openEdiArchivedSessionPreview,
+                        onCloseArchivedPreview = viewModel::closeEdiArchivedSessionPreview,
+                        onRequestRestoreArchived = viewModel::requestRestoreEdiArchivedSession,
+                        onSetRestoreSamePatientContinuityConfirmed = viewModel::setRestoreSamePatientContinuityConfirmed,
+                        onCancelRestoreArchived = viewModel::cancelRestoreEdiArchivedSession,
+                        onConfirmRestoreArchived = { viewModel.confirmRestoreEdiArchivedSession() },
+                        onStartNewEvaluationEpisode = { viewModel.startNewEdiEvaluationEpisode() },
+                        onCorrectSamePatientFechaNacimiento = viewModel::correctSamePatientFechaNacimiento,
+                        onSaveEvaluationManually = viewModel::saveCurrentEvaluationManually,
+                        onToggleEvaluationHistory = viewModel::toggleEvaluationHistory,
+                        onStartNewPatientEvaluation = viewModel::startNewPatientEvaluation,
+                        onCreateNewPatientEvaluation = viewModel::createNewPatientEvaluationWithIdentification,
+                        onContinueEvaluationFromHistory = viewModel::continueEvaluationFromHistory,
+                        onViewCompletedEvaluationFromHistory = viewModel::viewCompletedEvaluationFromHistory,
+                        onEnableEditingForViewedCompletedEvaluation = {
+                            viewModel.enableEditingForViewedCompletedEvaluation()
+                        },
+                        onRequestDeleteEvaluationFromHistory = viewModel::requestDeleteEvaluationFromHistory,
+                        onCancelDeleteEvaluationFromHistory = viewModel::cancelDeleteEvaluationFromHistory,
+                        onConfirmDeleteEvaluationFromHistory = viewModel::confirmDeleteEvaluationFromHistory,
+                        onUpdatePatientIdentification = viewModel::updatePatientIdentification,
+                        onPatientFullNameChange = viewModel::updatePatientFullName,
+                        onPatientDniChange = viewModel::updatePatientDni
                     )
                 }
             }

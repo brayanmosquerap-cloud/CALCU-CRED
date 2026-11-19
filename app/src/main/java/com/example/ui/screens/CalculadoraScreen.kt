@@ -7,9 +7,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,7 +27,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.CalendarToday
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Pin
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.SentimentSatisfied
 import androidx.compose.material.icons.outlined.Straighten
@@ -46,10 +52,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -59,8 +68,11 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -97,6 +109,8 @@ private val CalcTrackBg = Color(0xFFE4EAF2)
 @Composable
 fun CalculadoraScreen(
     state: CredEdiUiState,
+    onPatientFullNameChange: (String) -> Unit = {},
+    onPatientDniChange: (String) -> Unit = {},
     onSelectSexo: (SexoBiologico) -> Unit,
     onFechaNacimientoChange: (String) -> Unit,
     onFechaEvaluacionChange: (String) -> Unit,
@@ -111,6 +125,7 @@ fun CalculadoraScreen(
     onPesoInputChange: (String) -> Unit = {},
     onLongitudInputChange: (String) -> Unit = {},
     onPerimetroCefalicoInputChange: (String) -> Unit = {},
+    onConfirmTermWithoutWeeks: () -> Unit = {},
     onContinueToCurvas: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -160,7 +175,9 @@ fun CalculadoraScreen(
             // CARD 1: SEXO BIOLÓGICO + F. NACIMIENTO & F. EVALUACIÓN
             // =========================================================================
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("sexo_biologico_section"),
                 shape = RoundedCornerShape(28.dp),
                 color = Color.White,
                 shadowElevation = 1.dp
@@ -448,7 +465,7 @@ fun CalculadoraScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Bottom Metadata Row inside Card 1: Término: [40 sem] on left half only (Matches calculadora cred.png)
+                    // Bottom Metadata Row inside Card 1: Condición al nacer real (sin asumir 40 sem por defecto)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -456,33 +473,45 @@ fun CalculadoraScreen(
                     ) {
                         Row(
                             modifier = Modifier
-                                .weight(1f)
+                                .fillMaxWidth()
                                 .padding(horizontal = 4.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Término:",
+                                text = "Condición al nacer:",
                                 color = MutedText,
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.Medium
                             )
                             Surface(
                                 shape = RoundedCornerShape(50),
-                                color = CalcPillContainer
+                                color = if (state.isBirthMaturityConfirmationPendingInUnder24m) {
+                                    SoftAmberPill
+                                } else {
+                                    CalcPillContainer
+                                }
                             ) {
                                 Text(
-                                    text = "40 sem",
-                                    color = DarkText,
+                                    text = if (state.isBirthMaturityConfirmationPendingInUnder24m) {
+                                        "Pendiente confirmar"
+                                    } else {
+                                        state.ediGestationalAgeDisplay
+                                    },
+                                    color = if (state.isBirthMaturityConfirmationPendingInUnder24m) {
+                                        WarningText
+                                    } else {
+                                        DarkText
+                                    },
                                     fontSize = 11.sp,
                                     fontFamily = FontFamily.Monospace,
                                     fontWeight = FontWeight.ExtraBold,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    modifier = Modifier
+                                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                                        .testTag("calc_birth_maturity_summary_pill")
                                 )
                             }
                         }
-
-                        Spacer(modifier = Modifier.weight(1f))
                     }
                 }
             }
@@ -588,6 +617,95 @@ fun CalculadoraScreen(
                         }
                     }
 
+                    if (state.isBirthMaturityConfirmationPendingInUnder24m) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("calc_pending_birth_maturity_banner"),
+                            shape = RoundedCornerShape(16.dp),
+                            color = SoftAmberPill,
+                            border = BorderStroke(1.dp, BorderAmber)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Condición al nacer pendiente de confirmación",
+                                    color = WarningText,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                )
+                                Text(
+                                    text = "Menor de 24 meses (${state.edadCronologicaAMD}): confirme si nació a término (≥ 37 sem) o pretérmino (< 37 sem con EG exacta) antes de emitir resultados definitivos.",
+                                    color = DarkText,
+                                    fontSize = 11.sp,
+                                    lineHeight = 14.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable { onConfirmTermWithoutWeeks() }
+                                        .testTag("calc_confirm_term_no_weeks_button"),
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = CalcNavy
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 9.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Outlined.Verified,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(15.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Confirmar A término (sin semanas exactas)",
+                                            color = Color.White,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                    }
+                                }
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .clickable { onTogglePrematurez(true) }
+                                        .testTag("calc_activate_preterm_button"),
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color.White,
+                                    border = BorderStroke(1.dp, BorderAmber)
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Registrar prematuridad y EG (< 37 sem)",
+                                            color = WarningText,
+                                            fontSize = 11.5.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if (state.esPrematuro) {
                         Spacer(modifier = Modifier.height(16.dp))
 
@@ -622,12 +740,18 @@ fun CalculadoraScreen(
                                     color = CalcPillContainer
                                 ) {
                                     Text(
-                                        text = "${state.egSemanas} semanas",
+                                        text = if (state.ediHasRegisteredEg) {
+                                            "${state.egSemanas} semanas"
+                                        } else {
+                                            "EG no registrada"
+                                        },
                                         color = DarkText,
                                         fontSize = 11.5.sp,
                                         fontFamily = FontFamily.Monospace,
                                         fontWeight = FontWeight.ExtraBold,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                        modifier = Modifier
+                                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                                            .testTag("calc_eg_status_pill")
                                     )
                                 }
                                 Surface(
@@ -635,7 +759,11 @@ fun CalculadoraScreen(
                                     color = Color(0xFFFEE2E2)
                                 ) {
                                     Text(
-                                        text = "-${state.deficitSemanas} sem desfase",
+                                        text = if (state.hasValidConfirmedPretermForCorrection) {
+                                            "-${state.deficitSemanas} sem desfase"
+                                        } else {
+                                            "EG pendiente"
+                                        },
                                         color = Color(0xFFDC2626),
                                         fontSize = 11.sp,
                                         fontFamily = FontFamily.Monospace,
@@ -661,7 +789,7 @@ fun CalculadoraScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Slider(
-                                value = state.egSemanas.toFloat(),
+                                value = state.egSemanas.coerceIn(24, 36).toFloat(),
                                 onValueChange = { onUpdateEgSemanas(it.roundToInt()) },
                                 valueRange = 24f..36f,
                                 steps = 11,
@@ -695,6 +823,41 @@ fun CalculadoraScreen(
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold
                             )
+                        }
+
+                        if (!state.ediHasRegisteredEg) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { onUpdateEgSemanas(state.egSemanas) }
+                                    .testTag("calc_confirm_eg_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                color = CalcNavy
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Outlined.Verified,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Confirmar ${state.egSemanas} semanas exactas",
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -831,7 +994,11 @@ fun CalculadoraScreen(
                                         color = Color(0xFF334155)
                                     ) {
                                         Text(
-                                            text = "-${state.deficitSemanas} sem",
+                                            text = when {
+                                                state.isCorrectedAgePending -> "Confirmar EG"
+                                                state.isBirthMaturityConfirmationPendingInUnder24m -> "Confirmar cond."
+                                                else -> "-${state.deficitSemanas} sem"
+                                            },
                                             color = Color.White,
                                             fontSize = 10.5.sp,
                                             fontFamily = FontFamily.Monospace,
@@ -910,12 +1077,14 @@ fun CalculadoraScreen(
                             color = CalcPillContainer
                         ) {
                             Text(
-                                text = "3 datos",
+                                text = "${state.datosAntropometricosCount} datos",
                                 color = SlateText,
                                 fontSize = 10.5.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.ExtraBold,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                modifier = Modifier
+                                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                                    .testTag("calculadora_datos_count_badge")
                             )
                         }
                     }
@@ -980,17 +1149,17 @@ fun CalculadoraScreen(
                     // IMC CALCULADO Summary Card
                     val hasImcData = state.hasPesoIngresado && state.hasLongitudIngresada
                     val ptEval = state.evalPT
-                    val ptLabel = if (!hasImcData) {
-                        "Pendiente (P/T)"
-                    } else if (ptEval.shortClassification == "Normal") {
-                        "Eutrófico (P/T)"
-                    } else {
-                        "${ptEval.shortClassification} (P/T)"
+                    val imcEval = state.evalIMCE
+                    val ptLabel = when {
+                        !hasImcData -> "Pendiente (P/T)"
+                        !ptEval.isReferenceAvailable -> "Fuera de rango P/T"
+                        ptEval.shortClassification == "Normal" -> "Eutrófico (P/T)"
+                        else -> "${ptEval.shortClassification} (P/T)"
                     }
-                    val (badgeBg, badgeTextCol, badgeBorderCol) = if (!hasImcData) {
-                        Triple(Color.White, SlateText, CalcRowCardBorder)
-                    } else {
-                        when (ptEval.severity) {
+                    val (badgeBg, badgeTextCol, badgeBorderCol) = when {
+                        !hasImcData -> Triple(Color.White, SlateText, CalcRowCardBorder)
+                        !ptEval.isReferenceAvailable -> Triple(CalcPillContainer, SlateText, CalcRowCardBorder)
+                        else -> when (ptEval.severity) {
                             ClassificationSeverity.NORMAL -> Triple(SoftGreenBg, DarkGreenPill, BorderSoftGreen)
                             ClassificationSeverity.WARNING -> Triple(SoftAmberPill, WarningText, BorderAmber)
                             ClassificationSeverity.SEVERE -> Triple(SoftRedBg, DarkRedText, BorderSoftRed)
@@ -1056,7 +1225,8 @@ fun CalculadoraScreen(
                                             ) {
                                                 append("kg/m²")
                                             }
-                                        }
+                                        },
+                                        modifier = Modifier.testTag("calculadora_imc_value")
                                     )
                                 }
                             }
@@ -1072,20 +1242,27 @@ fun CalculadoraScreen(
                                         color = badgeTextCol,
                                         fontSize = 11.5.sp,
                                         fontWeight = FontWeight.ExtraBold,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                                        modifier = Modifier
+                                            .padding(horizontal = 12.dp, vertical = 5.dp)
+                                            .testTag("calculadora_pt_badge")
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(5.dp))
                                 Text(
-                                    text = if (hasImcData) {
-                                        "Z-Score: ${state.zScoreImc.formatSignedDecimal(1)} DE"
-                                    } else {
-                                        "Z-Score: -- DE"
+                                    text = when {
+                                        !hasImcData -> "Z-Score: -- DE"
+                                        !imcEval.isReferenceAvailable && !state.isChronologicalAgeVerifiable ->
+                                            "IMC/E: Edad no verificable"
+                                        !imcEval.isReferenceAvailable ->
+                                            "IMC/E: No disp. (ref. 0-60m)"
+                                        else ->
+                                            "Z-Score: ${state.zScoreImc.formatSignedDecimal(1)} DE"
                                     },
                                     color = MutedText,
                                     fontSize = 11.sp,
                                     fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.testTag("calculadora_imc_zscore_text")
                                 )
                             }
                         }
